@@ -268,6 +268,53 @@ wire('add-step', () => {
 wire('add-loop', () => { loops.push({ from: steps.at(-1)?.id ?? '', to: steps[0]?.id ?? '', until: 'PASS', maxRounds: 2 }); renderLoops(); });
 const taskFields = prefix => ({ task: $(prefix + '-task').value, cwd: $(prefix + '-cwd').value.trim() || undefined });
 const flow = () => ({ ...taskFields('flow'), participants: people, steps, loops });
+
+// Presets are the user's own saved flows (<stateDir>/presets.json): the panel can load
+// them back into the form and store whatever the form currently holds under a new name.
+let presetList = [];
+async function loadPresets() {
+  presetList = await api('/presets');
+  const node = $('flow-preset');
+  node.replaceChildren(...(presetList.length ? presetList.map(preset => [preset.id, preset.name]) : [['', '暂无预设']])
+    .map(([id, label]) => {
+      const option = el('option', label);
+      option.value = id;
+      return option;
+    }));
+  node.disabled = !presetList.length;
+}
+function applyPreset(id) {
+  const preset = presetList.find(entry => entry.id === id);
+  if (!preset) throw new Error('请先选择预设。');
+  const { flow: shape } = preset;
+  $('flow-task').value = shape.task ?? '';
+  people.splice(0, people.length, ...shape.participants.map(person => ({
+    id: person.id, role: person.role ?? '', responsibility: person.responsibility ?? '',
+    writes: Boolean(person.writes), agent: person.agent, model: person.model, effort: person.effort,
+  })));
+  steps.splice(0, steps.length, ...shape.steps.map(step => ({
+    id: step.id, participant: step.participant, task: step.task,
+    dependsOn: [...(step.dependsOn ?? [])], inputs: [...(step.inputs ?? [])], produces: [...(step.produces ?? [])],
+  })));
+  loops.splice(0, loops.length, ...(shape.loops ?? []).map(loop => ({
+    from: loop.from, to: loop.to, until: loop.until ?? 'PASS', maxRounds: loop.maxRounds ?? 2,
+  })));
+  renderPeople();
+  renderSteps();
+  message(preset.description || '已载入预设：' + preset.name);
+}
+wire('flow-preset-load', () => applyPreset($('flow-preset').value));
+wire('flow-preset-save', async () => {
+  const { task, ...rest } = flow();
+  if (!people.length || !steps.length) throw new Error('至少需要一个参与者和一个步骤。');
+  const name = window.prompt('预设名称（同名会覆盖）', presetList[0]?.name ?? '');
+  if (!name) return;
+  const saved = await api('/presets', 'POST', { name, flow: { task, ...rest } });
+  presetList = saved.presets;
+  await loadPresets();
+  $('flow-preset').value = saved.preset.id;
+  message('已保存预设：' + saved.preset.name + '（' + saved.preset.id + '）');
+});
 wire('validate', async () => {
   const plan = await api('/flow/validate', 'POST', flow());
   message(plan.ok ? '有效。执行顺序 ' + plan.order.join(' → ')
@@ -458,6 +505,7 @@ async function loadRun(id) {
 wire('refresh-runs', loadRuns);
 
 loadAgents().then(renderSettings).catch(error => message(error.message, true));
+loadPresets().catch(error => message(error.message, true));
 function poll(action, ms) {
   const tick = async () => {
     try {

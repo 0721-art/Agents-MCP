@@ -75,6 +75,8 @@ export async function createHttp(service, { port = service.getConfig().port } = 
         'POST /api/gate': async () => service.gate(await value()),
         'POST /api/flow/validate': async () => service.planFlow(await value()),
         'POST /api/flow/run': async () => service.runFlow(await value()),
+        'GET /api/presets': () => service.presets(),
+        'POST /api/presets': async () => service.savePreset(await value()),
         'POST /api/delegate': async () => service.delegate(await value()),
         'POST /api/draft-role': async () => service.draftRole(await value()),
         'POST /api/pick-folder': async () => {

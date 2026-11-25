@@ -28,6 +28,10 @@
     </section>
     <section id="flow" class="page" hidden>
       <div class="page-heading"><h2>流程编排</h2><div class="actions"><button id="validate">验证流程</button><button id="start-flow" class="primary">启动流程</button></div></div>
+      <div class="box fields preset-fields">
+        <label>预设<select id="flow-preset"></select></label>
+        <div class="actions"><button id="flow-preset-load" type="button">载入</button><button id="flow-preset-save" type="button">保存当前为预设</button></div>
+      </div>
       <div class="box fields task-fields">
         <label>任务<textarea id="flow-task" rows="3" placeholder="希望这个流程完成什么？"></textarea></label>
         <label>工作目录<div class="picker"><input id="flow-cwd" placeholder="默认使用服务启动目录"><button id="flow-cwd-pick" type="button">浏览…</button></div></label>

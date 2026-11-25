@@ -53,6 +53,19 @@ node bin/agents-mcp.js --selftest                     # CLI 与模型目录探�
 
 Agent 启动或探测失败时，面板显示原因和处置提示。Agent 的登录、凭据和配置由各 CLI 自行管理。
 
+## 预设（模式 A）
+
+模式 A 的参与者、步骤和评审循环由使用者自己填。填好之后可以在「流程编排」页点「保存当前为预设」，下次用下拉框「载入」即可复原；同名保存会覆盖。
+
+预设属于本机个人数据，保存在状态目录的 `presets.json`（默认 `%APPDATA%\Agents-MCP\presets.json`），仓库里不带任何预设内容。文件是普通 JSON 数组，每项形如：
+
+```json
+[{ "id": "my-flow", "name": "我的流程", "description": "可选说明",
+   "flow": { "task": "任务文本", "participants": [], "steps": [], "loops": [] } }]
+```
+
+`flow` 与 `POST /api/flow/run` 的请求体同构（`participants` 需含 `id/agent/model/effort`，`steps` 需含 `id/participant/task`，`loops` 用 `from/to/until/maxRounds`）。最多 50 条；缺字段的条目在读取时会被跳过，不会影响其他预设。
+
 ## 双击启动（单文件 exe）
 
 ```powershell

@@ -37,6 +37,7 @@ main { max-width: 1248px; padding: 24px; margin: 0 auto; }
 .badge[data-state="running"] { background: #e4ebff; color: #173d9e; }
 .fields, .actor { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 12px; }
 .task-fields { grid-template-columns: 2fr 1fr; }
+.preset-fields { grid-template-columns: 1fr auto; align-items: end; }
 .editor-row { display: grid; gap: 10px; border-top: 1px solid var(--line); padding: 12px 0; }
 .editor-row:last-child { padding-bottom: 0; }
 .actions, .chips { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }

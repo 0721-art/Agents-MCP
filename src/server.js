@@ -6,6 +6,7 @@ import { executeFlow, validateFlow } from './engine/flow.js';
 import { createGate } from './engine/gate.js';
 import { createStore, stateDirectory } from './engine/store.js';
 import { createRegistry } from './registry/index.js';
+import { deletePreset, readPresets, savePreset } from './presets.js';
 import { run } from './runner/exec.js';
 import { normalize } from './runner/events.js';
 
@@ -238,8 +239,10 @@ export async function createService({ stateDir, env = process.env, cwd = process
   }
 
   const service = {
-    redact: store.redact, listAgents: args => registry.list(args), pending: () => gate.pending(),
-    gate: args => gate.decide(request(args)), getConfig: () => ({ ...config, stateDir: store.dir }),
+    redact: store.redact, listAgents: args => registry.list(args), pending: () => gate.pending(),    gate: args => gate.decide(request(args)),
+    presets: () => readPresets(store),
+    savePreset: input => savePreset(store, input),
+    deletePreset: id => deletePreset(store, id), getConfig: () => ({ ...config, stateDir: store.dir }),
     setConfig: patch => updateConfig(() => patch),
     override(id, value) {
       if (!identifier(id) || !object(value)) throw problem('E_CONFIG', 'Invalid executable override.');

@@ -9,6 +9,7 @@
 | `src/assets.js` | 读取面板静态文件：开发目录直接读盘，单文件 exe 从内嵌资源读取。 |
 | `src/mcp/` | JSON-RPC 2.0、工具声明、逐行 stdio 与 Streamable HTTP。 |
 | `src/panel/server.js`、`src/panel/folder.js`、`panel/` | 回环监听、静态页面、同源 JSON API，以及用系统文件夹对话框选择工作目录。 |
+| `src/presets.js` | 读写状态目录里的 `presets.json`：校验、去重、同名覆盖，面板据此载入和保存模式 A 预设。 |
 | `src/registry/` | 定位 CLI、并行探测目录、缓存结果并返回可操作的健康提示。 |
 | `src/runner/` | 安全启动进程、解析行事件、限制输出缓冲，处理超时和取消。 |
 | `src/engine/` | 持久化授权、依赖图与评审循环、委派循环、原子状态写入。 |
