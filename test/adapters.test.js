@@ -46,6 +46,11 @@ test('Antigravity stream events yield the final answer and session', () => {
   assert.deepEqual(stream('{"event":"result","result":{"conversation_id":"c1","status":"SUCCESS","response":"OK\\n"}}'),
     { type: 'result', text: 'OK\n', sessionId: 'c1' });
   assert.equal(stream('{"event":"result","result":{"status":"ERROR","response":"boom"}}').type, 'error');
+  assert.deepEqual(stream('{"event":"result","result":{"status":"ERROR","response":""}}').text, 'ERROR');
+  assert.deepEqual(stream('{"event":"result","result":{"status":"ERROR","error":{"message":"quota"}}}').text, 'quota');
+  assert.equal(stream('{"event":"init","conversation_id":"--model"}').sessionId, undefined);
+  assert.deepEqual(agy.resumeArgs({ model: 'neon-low', sessionId: '-rf' }).args.includes('--resume'), false);
+  assert.deepEqual(agy.resumeArgs({ model: 'neon-low', sessionId: 'c1' }).args.slice(-2), ['--resume', 'c1']);
 });
 
 test('OMP reads explicit model efforts without exposing other YAML fields', () => {

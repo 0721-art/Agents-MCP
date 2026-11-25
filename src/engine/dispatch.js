@@ -62,7 +62,7 @@ export async function executeDispatch(ctx, input, caps) {
       const result = await limited(() => ctx.invoke(step, actor, prompt, { sessionId }));
       answer = result.answer;
       await ctx.transcript(step, prompt, answer);
-      if (result.failed) return { status: 'FAILED', answer };
+      if (result.failed) return { status: ctx.signal.aborted ? 'cancelled' : 'FAILED', answer };
       sessionId = result.sessionId || sessionId;
       let blocks = parseBlocks(answer);
       if (!blocks.length) blocks = parseBlocks(result.assistant.join('\n'));

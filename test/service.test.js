@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer, request } from 'node:http';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
@@ -13,7 +13,7 @@ import { createProtocol } from '../src/mcp/protocol.js';
 import { startStdio } from '../src/mcp/transport-stdio.js';
 import { createRedactor } from '../src/util/redact.js';
 import { executeFlow, validateFlow } from '../src/engine/flow.js';
-import { parseBlocks } from '../src/engine/dispatch.js';
+import { executeDispatch, parseBlocks } from '../src/engine/dispatch.js';
 
 const actor = { agent: 'fixture', model: 'fixture-model', effort: 'low' };
 const flow = {
@@ -248,15 +248,40 @@ test('redaction preserves JSON and covers short secrets, auth and proxies', () =
   assert.equal(redact('q7 proxy-user proxy-pass'), '[REDACTED] [REDACTED] [REDACTED]');
   assert.equal(redact('socks5://other:secret@localhost:8080'), 'socks5://[REDACTED]@localhost:8080');
   assert.equal(redact('socks://other:secret@localhost'), 'socks://[REDACTED]@localhost');
+  for (const text of ['{"progressToken":1}', '{"token":null}', '{"credentials":{"type":"oauth"}}', '{"token":["a"]}']) {
+    assert.equal(redact(text), text);
+    assert.doesNotThrow(() => JSON.parse(redact(text)));
+  }
+  assert.deepEqual(redact({ token: 42, progressToken: 1, note: 'ok' }), { token: 42, progressToken: 1, note: 'ok' });
+  assert.deepEqual(JSON.parse(redact(JSON.stringify({ report: 'API_KEY="abc\\"def"' }))), { report: 'API_KEY="[REDACTED]"' });
+  assert.equal(redact('PROXY_AUTHORIZATION=abc abc'), 'PROXY_AUTHORIZATION=[REDACTED] abc');
+  assert.deepEqual(redact({ proxyAuthorization: 'x', user: 'y' }), { proxyAuthorization: '[REDACTED]', user: 'y' });
+});
+
+test('a cancelled delegation reports cancelled rather than failed', async () => {
+  const controller = new AbortController();
+  const ctx = {
+    state: { warnings: [] }, config: { strengths: {} }, signal: controller.signal,
+    registry: { list: async () => [], get: async () => ({ adapter: {} }) },
+    invoke: async () => {
+      controller.abort();
+      return { failed: true, answer: 'Cancelled.', assistant: [] };
+    },
+    transcript: async () => {}, save: async () => {}, stepPath: id => id, redact: text => text,
+  };
+  const result = await executeDispatch(ctx, { ...actor, task: 'Do work' },
+    { maxDepth: 2, maxDelegations: 2, maxParallel: 1 });
+  assert.equal(result.status, 'cancelled');
 });
 
 test('shutdown refuses a run still waiting on validation', async t => {
-  const { service } = await setup(t);
+  const { dir, service } = await setup(t);
   const starting = service.draftRole({ ...actor, brief: 'Draft a responsibility' });
   const rejected = assert.rejects(starting, { code: 'E_CLOSING' });
   await service.close();
   await rejected;
   assert.deepEqual(await service.listRuns(), []);
+  assert.deepEqual(await readdir(join(dir, 'runs')).catch(() => []), []);
 });
 
 test('malformed state errors identify the file without its contents', async t => {

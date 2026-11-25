@@ -63,6 +63,7 @@ export async function createService({ stateDir, env = process.env, cwd = process
     } catch {
       throw problem('E_CWD', 'Target working directory does not exist.', 'Choose an existing local directory.');
     }
+    if (closing) throw problem('E_CLOSING', 'The service is shutting down.');
     const id = await store.newRun();
     const root = store.runDir(id);
     const controller = new AbortController();
@@ -136,7 +137,10 @@ export async function createService({ stateDir, env = process.env, cwd = process
                 if (assistant.length > 128) assistant.shift();
               }
               if (event.type === 'result' && typeof event.text === 'string') answer = event.text;
-              if (event.type === 'error') errorText = typeof event.text === 'string' ? event.text : JSON.stringify(event.text);
+              if (event.type === 'error') {
+                errorText = (typeof event.text === 'string' ? event.text : JSON.stringify(event.text))
+                  || 'Agent reported an error without a message.';
+              }
             } });
           if (outcome.stderrTail.trim() && outcome.code !== 0) emit({ step, type: 'error', text: outcome.stderrTail });
         } catch (error) {
@@ -145,8 +149,13 @@ export async function createService({ stateDir, env = process.env, cwd = process
         } finally {
           try {
             await spec?.cleanup?.();
-          } finally {
+          } catch (error) {
+            state.warnings.push('Cleanup after step ' + step + ' failed: ' + store.redact(error.message));
+          }
+          try {
             if (promptPath) await rm(promptPath, { force: true });
+          } catch (error) {
+            state.warnings.push('Removing the prompt file for step ' + step + ' failed: ' + store.redact(error.message));
           }
         }
         const failed = !outcome || outcome.code !== 0 || outcome.timedOut || outcome.cancelled || Boolean(errorText);
@@ -163,7 +172,11 @@ export async function createService({ stateDir, env = process.env, cwd = process
         return { failed: failed || noAnswer, answer, assistant, sessionId };
       },
     };
-    if (closing) throw problem('E_CLOSING', 'The service is shutting down.');
+    if (closing) {
+      // newRun() already created runs/<id>/artifacts; drop it instead of leaving an empty run behind.
+      await rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }).catch(() => {});
+      throw problem('E_CLOSING', 'The service is shutting down.');
+    }
     const record = { controller };
     runs.set(id, record);
     const ready = (async () => {
@@ -273,7 +286,7 @@ export async function createService({ stateDir, env = process.env, cwd = process
         const prompt = 'Expand this brief into a practical responsibility for one agent. Return only the responsibility.\n\n' + args.brief;
         const result = await ctx.invoke('draft', { ...args, writes: false }, prompt);
         await ctx.transcript('draft', prompt, result.answer);
-        return { status: result.failed ? 'FAILED' : 'PASS', answer: result.answer };
+        return { status: ctx.signal.aborted ? 'cancelled' : result.failed ? 'FAILED' : 'PASS', answer: result.answer };
       });
     },
     async status({ runId } = {}) {

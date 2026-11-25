@@ -1,9 +1,12 @@
 import { secretName } from '../config.js';
 
 const mask = '[REDACTED]';
-const isSecretName = key => secretName.test(key) || /[a-z\d](?:ApiKey|APIKey|Token|Secret|Password|Credentials?)$/.test(key)
-  || /^authorization$/i.test(key);
-const assignment = /(\b[\w-]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?|AUTHORIZATION)["']?\s*[:=]\s*)("[^"\\\r\n]*(?:\\.[^"\\\r\n]*)*"|'[^'\\\r\n]*(?:\\.[^'\\\r\n]*)*'|\\"[^"\r\n]*?\\"|(?:(?:Bearer|Basic)[ \t]+)?(?:\[REDACTED\]|(?:\\[^\r\n]|[^\s,;}\]"'\\])+))/gi;
+const isSecretName = key => secretName.test(key)
+  || /[a-z\d](?:ApiKey|APIKey|Token|Secret|Password|Credentials?|Authorization)$/.test(key)
+  || /(?:^|[_-])authorization$/i.test(key);
+// A credential value is a quoted string, an unquoted token, or an escaped JSON string.
+// Object and array values are left alone: rewriting them would produce invalid JSON.
+const assignment = /(\b[\w-]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?|AUTHORIZATION)["']?\s*[:=]\s*)("[^"\\\r\n]*(?:\\.[^"\\\r\n]*)*"|'[^'\\\r\n]*(?:\\.[^'\\\r\n]*)*'|\\"(?:[^"\\\r\n]|\\.)*\\"|(?:(?:Bearer|Basic)[ \t]+)?(?:\[REDACTED\]|(?:\\[^\r\n]|[^\s,;{}\[}\]"'\\])+))/gi;
 const escapeRegex = text => text.replace(/[.*+?^$(){}|[\]\\]/g, '\\$&');
 
 export function createRedactor(env) {
@@ -28,8 +31,11 @@ export function createRedactor(env) {
   const known = patterns.length ? new RegExp([escapeRegex(mask), ...patterns].join('|'), 'g') : null;
   function cleanText(value, key = false) {
     value = value
-      .replace(assignment, (_, name, secret) => {
+      .replace(assignment, (match, name, secret) => {
         const quote = secret.startsWith('\\"') ? '\\"' : /^["']/.exec(secret)?.[0] ?? '';
+        // A JSON key whose value is a number, boolean, or null is not a credential and must
+        // keep its type: turning progressToken into a string breaks the MCP protocol.
+        if (!quote && /(?<!\\)["']\s*:\s*$/.test(name)) return match;
         return name + quote + mask + quote;
       })
       .replace(/\b(Bearer|Basic)[ \t]+[A-Za-z0-9._~+/=-]+/gi, '$1 ' + mask)
@@ -42,7 +48,7 @@ export function createRedactor(env) {
     if (Array.isArray(value)) return value.map(clean);
     if (value && typeof value === 'object') {
       return Object.fromEntries(Object.entries(value).map(([key, child]) => [
-        cleanText(key, true), isSecretName(key) ? mask : clean(child),
+        cleanText(key, true), isSecretName(key) && typeof child === 'string' ? mask : clean(child),
       ]));
     }
     return value;

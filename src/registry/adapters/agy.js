@@ -18,12 +18,19 @@ export function parseModels(text) {
   return models;
 }
 
+const sessionIdPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
+
 export function parseStream(line) {
   const event = JSON.parse(line);
-  const sessionId = event.conversation_id ?? event.result?.conversation_id;
+  const candidate = event.conversation_id ?? event.result?.conversation_id;
+  const sessionId = typeof candidate === 'string' && sessionIdPattern.test(candidate) ? candidate : undefined;
   if (event.event === 'result') {
     const status = event.result?.status;
-    return { type: status === 'SUCCESS' ? 'result' : 'error', text: event.result?.response ?? status, sessionId };
+    return {
+      type: status === 'SUCCESS' ? 'result' : 'error',
+      text: event.result?.response || event.result?.error?.message || status || 'Antigravity returned no answer.',
+      sessionId,
+    };
   }
   if (event.event === 'step_update') {
     const update = event.step_update ?? {};
@@ -56,7 +63,7 @@ export default adapter({
     const args = ['--model', name, '--mode', permission === 'write' ? 'accept-edits' : 'plan',
       '--input-format', 'stream-json', '--output-format', 'stream-json'];
     if (schemaPath) args.push('--json-schema', schemaPath);
-    if (sessionId) args.push('--resume', sessionId);
+    if (sessionId && sessionIdPattern.test(sessionId)) args.push('--resume', sessionId);
     return { args, stdin: JSON.stringify({ event: 'user', message: { content: prompt } }) + '\n' };
   },
   resumeArgs(options) { return this.buildArgs(options); },

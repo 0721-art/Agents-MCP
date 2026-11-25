@@ -74,7 +74,7 @@ export default adapter({
     const id = cut > 0 ? name.slice(cut + 1) : name;
     const dir = mkdtempSync(join(tmpdir(), 'agents-mcp-dsh-'));
     const patch = join(dir, 'overlay.yml');
-    const cleanup = () => rmSync(dir, { recursive: true, force: true });
+    const cleanup = () => rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
     try {
       writeFileSync(patch, overlay(provider, id, effort && effort !== 'default' ? effort : null));
     } catch (error) {
