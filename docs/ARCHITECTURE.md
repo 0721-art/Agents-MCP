@@ -60,7 +60,7 @@ stdio 每行一个 JSON-RPC 消息，日志写入 stderr。HTTP 支持 `POST /mc
 
 ## 单文件可执行程序
 
-`scripts/connect-dsh.mjs` 在状态目录下生成一个 carrier bundle（package.json 声明 `dsh.bundle.patch`，patch 插入 `@deepseek-ai/dsh-mcp-client` 行，指向本仓库的 `bin/agents-mcp.js --mcp=stdio`），再调用 `dsh plugin <profile> add` 安装；desktop profile 由 DSH 窗口独占，此时只生成 bundle 并给出从 DSH 界面安装的提示。
+`scripts/connect.mjs <codex|claude|dsh>` 把本仓库挂进别的 Agent：Codex 走 `codex mcp add`（可选 `--approve` 往 `[mcp_servers.agents-mcp]` 加 `default_tools_approval_mode`），Claude Code 走 `claude mcp add -s <scope>`，DSH 在状态目录下生成一个 carrier bundle（package.json 声明 `dsh.bundle.patch`，patch 插入 `@deepseek-ai/dsh-mcp-client` 行，指向本仓库的 `bin/agents-mcp.js --mcp=stdio`），再调用 `dsh plugin <profile> add` 安装；desktop profile 由 DSH 窗口独占，此时只生成 bundle 并给出从 DSH 界面安装的提示。启动命令里的 node 由 `nodeRuntime()` 解析，所以在打包 exe 里也不会退化成 exe 自身。
 
 `scripts/build-exe.mjs` 用 esbuild 把 `src/app.js` 及其依赖打成一个 CommonJS 文件，再用 Node 的 `--build-sea` 生成 `dist/Agents-MCP.exe`。SEA 不解析相对模块，所以必须打包；面板的 `index.html`、`panel.js`、`panel.css` 作为 SEA assets 内嵌，运行时由 `src/assets.js` 经 `node:sea` 读取，因此 exe 不依赖仓库目录。打包版不包含 fixtures 与测试，`AGENTS_MCP_FIXTURES` 只对源码运行有效。esbuild 仅是开发依赖，运行时仍然只用 Node 标准库。
 

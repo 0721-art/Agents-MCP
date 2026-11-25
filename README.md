@@ -88,20 +88,39 @@ npm run build:exe        # 输出 dist/Agents-MCP.exe
 - 打包版不含测试 fixture，`AGENTS_MCP_FIXTURES` 只对源码运行有效；Agent 仍按本机 CLI 的实际登录状态探测。
 - exe 运行时通过 npm 安装的 Agent（如 `dsh`、`pi`）会改用 PATH 上的 `node` 执行其 shim；缺少 Node.js 时这些 Agent 会显示不可用并提示安装。
 
-## 接入 DSH（MCP）
+## 接入其它 Agent（MCP）
 
-让 DSH 直接调用这套工具，不用切窗口：
+让 Codex、Claude Code、DSH 直接调用这套工具，不用切窗口：
 
 ```bash
-npm run connect:dsh                        # 生成 bridge bundle 并装进 profile
-npm run connect:dsh -- --profile web       # CLI 可管理的 profile
-npm run connect:dsh -- --remove            # 卸载
+npm run connect:codex                      # 写进 ~/.codex/config.toml
+npm run connect:claude                     # 写进 Claude Code 的 user 配置
+npm run connect:dsh                        # 生成 bridge bundle 并装进 DSH profile
+
+npm run connect:codex  -- --list           # 看当前注册了什么（三个都支持）
+npm run connect:claude -- --remove         # 撤销（三个都支持）
 ```
+
+三者启动的都是同一个 `node bin/agents-mcp.js --mcp=stdio`，共用 `%APPDATA%\Agents-MCP` 状态目录 —— 面板里跑过的流程、门禁记录、运行记录，在这三个 Agent 里都读得到，反过来也一样。
+
+**Codex**（`[mcp_servers.agents-mcp]`）：默认每次 MCP 调用都会要求批准。想让它免批准：
+
+```bash
+npm run connect:codex -- --approve
+```
+
+这会在 `[mcp_servers.agents-mcp]` 里加 `default_tools_approval_mode = "approve"`（只动这一行）。**注意**：批准意味着 Codex 可以不经询问就派活给别的 Agent、跑会写文件的流程，按需开启。
+
+**Claude Code**（默认 `-s user`，即全局）：`npm run connect:claude -- --scope project` 可以改成项目级。注册完 `claude mcp list` 会做健康检查，正常显示 `agents-mcp … √ Connected`；工具名是 `mcp__agents-mcp__<Tool>`。
+
+**DSH**：
 
 - bundle 生成在 `%APPDATA%\Agents-MCP\dsh-bundle`（带绝对路径，所以不放进仓库）。
 - `desktop` profile 归 DSH 窗口所有，启动器拒绝命令行安装：脚本会打印 bundle 路径，从 DSH 的插件页选择“从文件夹安装”即可（DSH 自己也能装）。
-- 装好后 DSH 会话里多出 `mcp__agents-mcp__agents_list`、`agents_flow_run`、`agents_status` 等工具，和面板共用同一个状态目录，所以在 DSH 里能看到面板上那批运行记录。
-- 桥接进程是 `node bin/agents-mcp.js --mcp=stdio`，只开 stdio，不抢占面板端口。
+- 装好后 DSH 会话里多出 `mcp__agents-mcp__agents_list`、`agents_flow_run`、`agents_status` 等工具。
+- 桥接进程只开 stdio，不抢占面板端口。
+
+三个都支持 `-- --exe PATH` 指定找不到的 CLI；脚本会复用适配器的定位逻辑（例如 Codex 的 appx 安装目录）。
 
 ## 验证
 

@@ -1,5 +1,11 @@
 # 更新记录
 
+## 0.1.1（未发布）
+
+- **Codex 接入**：`npm run connect:codex` 把本服务写进 `~/.codex/config.toml` 的 `[mcp_servers.agents-mcp]`，Codex 会话里直接出现 `agents_list`、`agents_flow_run` 等工具。`--approve` 可选地关掉每次调用的批准提示。
+- **Claude Code 接入**：`npm run connect:claude` 以 user 作用域注册（`--scope project|local` 可改），注册后 `claude mcp list` 的健康检查显示已连接。
+- **一个入口**：`scripts/connect.mjs <codex|claude|dsh>` 统一三家接入，都支持 `--list`、`--remove`、`--exe PATH`；三者共用同一个状态目录，面板与各 Agent 看到同一批运行记录。
+
 ## 0.1.0
 
 首个可试用版本，面向 Windows 本地使用。

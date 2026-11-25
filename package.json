@@ -1,6 +1,6 @@
 {
   "name": "agents-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Standalone MCP server plus local panel that lets one agent orchestrate the other agent CLIs installed on this machine.",
   "type": "module",
   "bin": {
@@ -13,7 +13,9 @@
   "scripts": {
     "test": "node --test",
     "build:exe": "node scripts/build-exe.mjs",
-    "connect:dsh": "node scripts/connect-dsh.mjs"
+    "connect:dsh": "node scripts/connect.mjs dsh",
+    "connect:codex": "node scripts/connect.mjs codex",
+    "connect:claude": "node scripts/connect.mjs claude"
   },
   "keywords": [
     "mcp",
