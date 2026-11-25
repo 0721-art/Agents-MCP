@@ -1,0 +1,12 @@
+{
+  "task": "Build and review a fixture patch",
+  "participants": [
+    {"id":"author","agent":"fixture","model":"fixture-model","effort":"low","role":"implementer","responsibility":"Prepare the patch.","writes":true},
+    {"id":"reviewer","agent":"fixture","model":"fixture-model","effort":"high","role":"reviewer","responsibility":"Review the patch."}
+  ],
+  "steps": [
+    {"id":"write","participant":"author","task":"Implement","inputs":["task"],"produces":["patch"]},
+    {"id":"review","participant":"reviewer","task":"changes-then-pass","dependsOn":["write"],"inputs":["patch"]}
+  ],
+  "loops": [{"from":"review","to":"write","until":"PASS","maxRounds":2}]
+}

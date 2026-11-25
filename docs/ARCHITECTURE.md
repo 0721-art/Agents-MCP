@@ -1,0 +1,76 @@
+# Agents-MCP v1 架构
+
+`bin/agents-mcp.js` 创建服务实例，并按启动参数打开 stdio 或回环 HTTP。两种 MCP 传输和面板 JSON API 调用同一个服务，因此使用同一份授权、配置和运行记录。
+
+| 模块 | 职责 |
+| --- | --- |
+| `src/server.js`、`src/config.js` | 组装服务，校验配置和工作目录，记录并管理后台运行。 |
+| `src/mcp/` | JSON-RPC 2.0、工具声明、逐行 stdio 与 Streamable HTTP。 |
+| `src/panel/server.js`、`panel/` | 回环监听、静态页面和同源 JSON API。 |
+| `src/registry/` | 定位 CLI、并行探测目录、缓存结果并返回可操作的健康提示。 |
+| `src/runner/` | 安全启动进程、解析行事件、限制输出缓冲，处理超时和取消。 |
+| `src/engine/` | 持久化授权、依赖图与评审循环、委派循环、原子状态写入。 |
+
+## 适配器契约
+
+每个 `src/registry/adapters/*.js` 导出一个对象，包含 `id`、`name`、`kind` 以及下列方法。
+
+| 方法 | 输入与输出 |
+| --- | --- |
+| `locate` | 接收 `{overrides, env, signal}`，返回 `{exe, source, version?}` 或 `null`。 |
+| `probe` | 接收 `{exe, env, signal}`，返回 `{ok, models, warnings?, reason?, remedy?, version?}`。模型包含 `id`、`label`、`efforts` 和 `defaultEffort`。 |
+| `buildArgs` | 接收 `{model, effort, cwd, permission, prompt, schemaPath?, promptPath?, sessionId?}`，返回 `{args, stdin?}`。 |
+| `parseStream` | 将一行输出映射为 `assistant`、`reasoning`、`tool`、`result`、`error` 或 `raw` 事件。 |
+| `env` | 提供额外进程环境。用户代理覆盖只允许 HTTP_PROXY、HTTPS_PROXY 和 NO_PROXY。 |
+| `resumeArgs`、`parseSessionId` | 可选，使用一个明确的会话 ID 继续同一 CLI 会话。 |
+
+各适配器文件头记录了 argv 和核对状态。Codex 支持结构化输出 schema，Antigravity 使用 CLI 完整模型 ID 表达后缀定义的强度。Claude 的帮助给出的是通用强度选项，实际模型能力取决于后端。OMP 只读取本地 YAML 中的模型元数据。DSH 通过 `dsh --profile headless --dump-config` 读取 profile 默认模型（provider/model），运行期用临时 `--patch` overlay 覆盖 `agent-default-model`（可带 `reasoningEffort`），既不依赖 headless 不存在的模型参数，也不写用户的 profile 文件；缺少 `DEEPSEEK_API_KEY` 时给出警告。最后一个 `result` 优先作为答案，缺失时使用 assistant 文本。
+
+当 `AGENTS_MCP_FIXTURES=1` 时，注册表只启动离线 fixture。普通运行时，`config.fixtures=true` 可在真实目录中额外注册 fixture。探测有 15 秒预算，失败信息保留在 `agents-cache.json`。滚动更新检测结果可使用 `agents_list` 的 `refresh`。
+
+## MCP 工具
+
+stdio 每行一个 JSON-RPC 消息，日志写入 stderr。HTTP 支持 `POST /mcp`，初始化返回 `Mcp-Session-Id`，后续调用携带该 ID。客户端可用 `DELETE /mcp` 关闭会话。客户端请求中的 `_meta.progressToken` 可触发工具进度通知，`logging/setLevel` 可启用工具日志，HTTP 工具调用可通过事件流返回这两类通知。运行步骤的进度由 `agents_status` 提供。
+
+工具结果同时使用 `structuredContent` 和 JSON 文本。工具错误设置 `isError`，并约定字段 `{code, message, remedy?, details?}`。输入 schema 由 `tools/list` 返回。
+
+| 工具 | 主要参数与结果 |
+| --- | --- |
+| `agents_list` | `{refresh?}` → `{agents}` |
+| `agents_gate` | `{taskId 或 task, decision: "enable" 或 "disable", mode?}` → 授权状态 |
+| `agents_flow_plan` | 流程定义 → `{ok, errors, order, warnings}` |
+| `agents_flow_run` | 流程定义 → `{runId}` 或授权状态 |
+| `agents_delegate` | `{task, taskId?, cwd?, agent, model, effort, writes?, maxDepth?, maxDelegations?, maxParallel?, wallClockMinutes?}` → `{runId}` 或授权状态 |
+| `agents_status` | `{runId}` → 步骤状态、事件、产物、报告路径和最终答案 |
+| `agents_cancel` | `{runId}` → 取消状态 |
+| `agents_draft_role` | `{agent, model, effort, brief, task?, taskId?, cwd?}` → `{runId}` 或授权状态。完成后从状态中读取 `answer`。 |
+
+面板通过 `/api/agents`、`/api/config`、`/api/strengths`、`/api/gate/pending`、`/api/gate`、`/api/flow/validate`、`/api/flow/run`、`/api/delegate`、`/api/runs` 和 `/api/draft-role` 操作同一服务。
+
+## 授权和执行
+
+`ask-once` 将规范化任务文本的 SHA-256 前 16 位用作默认 ID。也可提供一个显式 ID，首次使用时会绑定任务文本。首个请求返回 `confirmation_required`，重复请求引用同一条待授权记录。待授权条目及决定存入 `gate.json`。决定可由面板或 MCP 提交，写入后不可覆盖。同一个 ID 的决定跨重启有效。模式 A、B 开关独立，策略还支持 `auto-enable` 与 `deny`。职责生成默认直接运行，可以在设置中接入授权。
+
+**模式 A** 使用 `{task, participants, steps, loops?}`。参与者指定 Agent、模型、强度、角色、职责和写入权限。步骤指定参与者、任务、`dependsOn`、`inputs` 和 `produces`。调度器验证有向无环图，再按依赖和并发上限执行。下游通过产物绝对路径与短摘要接收交接。`{from, to, until: "PASS", maxRounds}` 定义评审循环，`maxRounds` 包含首轮。收到 `CHANGES_REQUESTED` 后，评审路径回到上游起点并携带反馈。循环之外的相关下游等待评审通过。子进程运行失败、超时或明确阻塞会结束该分支。运行结束后生成汇总报告。
+
+**模式 B** 给主 Agent 提供任务、可用目录、专长和逐行 `@@AGENTS_MCP delegate {...}` / `@@AGENTS_MCP report {...}` 协议。有效委派占用全局配额。深度、次数、并发和总时限取服务配置与本次请求的较小值。续写使用适配器已识别的会话 ID，缺少该能力时使用有限长度的会话记录。写入权限由启动请求设定，并沿委派树继承。报告列出委派树及主 Agent 给出的工作目录产物引用。原生 MCP 自注册留待后续版本。
+
+## 状态目录
+
+```text
+config.json
+agents-cache.json
+gate.json
+runs/<run-id>/
+  request.md
+  flow.json
+  steps/<id>.md
+  artifacts/
+  events.jsonl
+  state.json
+  report.md
+```
+
+`flow.json` 仅用于模式 A。步骤文稿保留最新一轮的提示和答案，全量事件按生成顺序存入 JSONL。记录包含实际工作目录。配置、授权和运行状态使用同目录临时文件与原子重命名。一个状态目录应交由一个服务实例管理。
+
+HTTP 监听 `127.0.0.1`，校验 Host 和 Origin。面板不加载外部资源，文件接口仅允许访问运行目录内的指定文稿。子进程使用所选工作目录与 CLI 权限参数。Windows 用 `taskkill /T /F`，POSIX 向进程组发送终止信号。服务不会写入 Agent 的配置目录，CLI 自身可按其设置维护会话。服务在落盘和返回内容前做密钥脱敏，代理配置拒绝嵌入凭据。

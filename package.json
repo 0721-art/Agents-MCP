@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Standalone MCP server plus local panel that lets one agent orchestrate the other agent CLIs installed on this machine.",
   "type": "module",
+  "bin": {
+    "agents-mcp": "bin/agents-mcp.js"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=22"
@@ -27,6 +30,8 @@
     "bin/",
     "src/",
     "panel/",
+    "fixtures/fake-agent.js",
+    "docs/ARCHITECTURE.md",
     "README.md",
     "LICENSE"
   ]

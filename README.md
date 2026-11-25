@@ -1,71 +1,56 @@
 # Agents-MCP
 
-Standalone [MCP](https://modelcontextprotocol.io) server plus a local panel that lets one AI agent
-orchestrate the other agent CLIs installed on this machine — Codex, Antigravity, Claude Code, DSH,
-Pi, OMP, Grok — each at its own model and reasoning effort.
+Agents-MCP 是一个本地 MCP 服务，带有网页控制台。它读取已安装 Agent CLI 的模型配置，按任务调度子进程，并保存运行记录和报告。需要 Node.js 22 或更新版本。运行时只使用 Node 标准库。
 
-> Status: under active development. The contract below is the target; see `docs/` for what is
-> implemented today.
+## 启动
 
-## Why
-
-Every agent CLI on this machine is good at something different, and each keeps its own model
-catalog and reasoning-effort levels. Agents-MCP turns them into one addressable roster:
-
-- it **detects** the installed agents and reads each one's own config to know which models and
-  effort levels it really supports;
-- it **runs** them as subprocesses in a target working directory, streaming their events;
-- it **hands work off** between them, either along a flow you design or by letting one main agent
-  dispatch freely;
-- and it asks you **once per task** whether this server should be in charge.
-
-## Two modes
-
-**Mode A — orchestration.** You pick participants (`agent` + `model` + `effort`), write or have the
-LLM expand each one's responsibility, then arrange the flow: steps, dependencies, hand-off
-artifacts, review loops. The server executes that graph.
-
-**Mode B — delegation.** You designate a main agent. It receives the task plus the roster and
-dispatches to the others by itself, then reports back. The server enforces depth and fan-out limits
-and records the whole task tree.
-
-Both modes can be switched on or off independently. Before the first run of a task the server asks
-the user once — never again for that task.
-
-## Surfaces
-
-- **MCP** over stdio (default) and streamable HTTP, so any MCP host can use it.
-- **Panel**: a local web UI served by the same process — agent health, model/effort selection,
-  responsibilities, flow editor, live run monitor, and the enable-once gate.
-
-## Getting started
-
-```bash
-git clone https://github.com/0721-art/Agents-MCP.git
-cd Agents-MCP
-node bin/agents-mcp.js          # MCP server on stdio
-node bin/agents-mcp.js --panel  # also open the panel
+```powershell
+node bin/agents-mcp.js                               # stdio MCP
+node bin/agents-mcp.js --panel                       # stdio MCP 与本地面板
+node bin/agents-mcp.js --mcp=http                     # HTTP MCP 与本地面板
+node bin/agents-mcp.js --selftest                     # CLI 与模型目录探测
 ```
 
-Requires Node.js 22 or newer and at least one supported agent CLI on `PATH` or in its default
-install location.
+面板默认地址为 `http://127.0.0.1:4870/`，HTTP MCP 使用同一端口的 `/mcp`。MCP 服务名为 `agents`。stdio 主机使用 `node` 作为命令，并将 `bin/agents-mcp.js` 的绝对路径作为参数。
 
-## Agents
+启动参数 `--port N` 可覆盖端口，`--state-dir DIR` 可覆盖状态目录。也可使用 `AGENTS_MCP_HOME`；默认目录在 Windows 是 `%APPDATA%\Agents-MCP`，在其他系统是 `$XDG_STATE_HOME/agents-mcp`，后者回退到 `~/.local/state/agents-mcp`。面板设置里的端口在重启后生效。
 
-| Agent        | Detected as              | Models from                       | Effort                      |
-| ------------ | ------------------------ | --------------------------------- | --------------------------- |
-| Codex        | `codex` appx / `codex`   | `~/.codex/models_cache.json`      | `model_reasoning_effort`    |
-| Antigravity  | `agy`                    | `agy models`                      | `--effort`                  |
-| Claude Code  | `claude`                 | configured aliases + catalog      | `--effort`                  |
-| Pi           | `pi`                     | `~/.pi/agent/models.json`         | `--thinking`                |
-| OMP          | `omp`                    | `omp` config + models             | `--thinking`                |
-| Grok         | `grok`                   | `grok models`                     | effort flag                 |
-| DSH          | `DeepSeek Harness`       | profile config (`dsh-llm-pi-ai`)  | provider effort map         |
+## 控制台
 
-Adapters are declarative: an agent is a JSON/YAML record describing its executable, its model
-catalog probe, its argv builder and its output parser. Adding an agent should not require touching
-the engine.
+- **Agents** 显示探测结果、模型和思考强度。可保存可执行文件路径和每个 Agent 的 HTTP/HTTPS 代理，之后重新检测。
+- **模式 A** 选定参与者，填写或生成职责，再定义步骤、依赖和评审循环。成功的步骤可以把产物交给下游。
+- **模式 B** 指定主 Agent、填写其他 Agent 的专长、设置委派上限。运行记录显示委派树。
+- **运行记录** 展示步骤状态、耗时、事件、产物和报告，运行期间可取消。
+- **设置** 管理任务授权策略、两种模式的开关、端口、默认超时和并发。
 
-## License
+首次运行一个任务时，服务默认请求人类授权。网页横幅和 MCP 工具使用同一个持久化决定。
+
+## Agent 目录来源
+
+| Agent | 模型与强度来源 |
+| --- | --- |
+| Codex | `models_cache.json`、`config.toml`。Windows 自动查找 AppX；可用面板或 `AGENTS_MCP_CODEX_EXE` 覆盖路径。 |
+| Antigravity | `agy models`。带强度后缀的模型使用完整 ID，其他模型使用 CLI 默认强度。 |
+| Claude Code | 本地设置、`ANTHROPIC_MODEL` 和 CLI 帮助公布的别名及强度选项。 |
+| Pi | 本地 `models.json`、`models-store.json` 和思考强度设置。 |
+| OMP | 本地 `models.yml` 和 `config.yml`。需要能正常启动的 OMP。 |
+| Grok | `grok models` 和本地 `reasoning_effort`。需要已登录的 CLI。 |
+| DeepSeek Harness | 官方 `dsh` CLI（`npm i -g @deepseek-ai/dsh`）。headless profile 没有 `--model`/`--effort`，每次运行用临时 `--patch` 覆盖 `agent-default-model`，不改动用户 profile；需要 `DEEPSEEK_API_KEY`。 |
+
+Agent 启动或探测失败时，面板显示原因和处置提示。Agent 的登录、凭据和配置由各 CLI 自行管理。
+
+## 验证
+
+```powershell
+npm test
+node bin/agents-mcp.js --selftest
+node scripts/mcp-smoke.mjs
+```
+
+`AGENTS_MCP_FIXTURES=1` 启用离线 fixture，便于在没有登录真实 Agent 的环境中验证面板。可选 Antigravity 实测需要显式设置 `AGENTS_MCP_LIVE=1`，再运行 `node --test scripts/live-agy.mjs`。
+
+适配器契约、MCP 输入形状和状态布局见 [架构说明](docs/ARCHITECTURE.md)。
+
+## 许可
 
 MIT

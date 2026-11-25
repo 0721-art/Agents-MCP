@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agents-MCP 控制台</title>
+  <link rel="stylesheet" href="/panel.css">
+  <script type="module" src="/panel.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="identity"><span class="mark" aria-hidden="true">A</span><div><h1>Agents-MCP</h1><p>本机 Agent 控制台</p></div></div>
+    <span class="local"><i></i> 本地服务</span>
+  </header>
+  <main>
+    <section id="gate" class="gate" aria-label="任务授权" aria-live="polite" hidden></section>
+    <nav class="tabs" aria-label="控制台页面">
+      <button data-tab="agents" aria-current="page">Agents</button>
+      <button data-tab="flow">模式 A · 编排</button>
+      <button data-tab="delegate">模式 B · 委派</button>
+      <button data-tab="runs">运行记录</button>
+      <button data-tab="settings">设置</button>
+    </nav>
+    <p id="message" aria-live="polite" hidden></p>
+    <section id="agents" class="page">
+      <div class="page-heading"><h2>本机 Agents</h2><button id="refresh" class="primary">重新检测</button></div>
+      <div id="agent-list" class="agent-list"><p>正在读取 Agent…</p></div>
+    </section>
+    <section id="flow" class="page" hidden>
+      <div class="page-heading"><h2>流程编排</h2><div class="actions"><button id="validate">验证流程</button><button id="start-flow" class="primary">启动流程</button></div></div>
+      <div class="box fields task-fields">
+        <label>任务<textarea id="flow-task" rows="3" placeholder="希望这个流程完成什么？"></textarea></label>
+        <label>工作目录<input id="flow-cwd" placeholder="默认使用服务启动目录"></label>
+      </div>
+      <div class="box"><div class="subheading"><h3>参与者</h3><button id="add-person">添加参与者</button></div><div id="people"></div></div>
+      <div class="box"><div class="subheading"><h3>步骤</h3><button id="add-step">添加步骤</button></div><div id="steps"></div></div>
+      <div class="box"><div class="subheading"><h3>评审循环</h3><button id="add-loop">添加循环</button></div><div id="loops"></div></div>
+    </section>
+    <section id="delegate" class="page" hidden>
+      <div class="page-heading"><h2>主 Agent 委派</h2><button id="start-delegate" class="primary">启动委派</button></div>
+      <div class="box fields task-fields">
+        <label>任务<textarea id="delegate-task" rows="3" placeholder="交给主 Agent 的任务"></textarea></label>
+        <label>工作目录<input id="delegate-cwd" placeholder="默认使用服务启动目录"></label>
+      </div>
+      <div class="box"><h3>主 Agent</h3><div id="main-actor"></div><label class="check"><input id="delegate-writes" type="checkbox">允许参与委派的 Agent 请求写入</label></div>
+      <div class="box"><h3>委派上限</h3><div class="fields caps" id="caps"></div></div>
+      <div class="box"><div class="subheading"><h3>Agent 专长</h3><button id="save-strengths">保存专长</button></div><div id="strengths"></div></div>
+    </section>
+    <section id="runs" class="page" hidden>
+      <div class="page-heading"><h2>运行记录</h2><button id="refresh-runs">刷新</button></div>
+      <div class="run-layout"><div id="run-list" class="box"></div><div id="run-detail" class="box"><p>选择一条运行记录。</p></div></div>
+    </section>
+    <section id="settings" class="page" hidden>
+      <div class="page-heading"><h2>服务设置</h2><button id="save-settings" class="primary">保存设置</button></div>
+      <div class="box fields settings-fields">
+        <label>任务授权<select id="policy"><option value="ask-once">每个任务询问一次</option><option value="auto-enable">自动启用</option><option value="deny">拒绝所有任务</option></select></label>
+        <label class="check"><input id="enable-a" type="checkbox">启用模式 A</label>
+        <label class="check"><input id="enable-b" type="checkbox">启用模式 B</label>
+        <label class="check"><input id="draft-gate" type="checkbox">生成职责也需要授权</label>
+        <label>服务端口<input id="port" type="number" min="0" max="65535"><small>重启后生效</small></label>
+        <label>默认步骤超时（分钟）<input id="step-timeout" type="number" min="1" max="1440"></label>
+        <label>默认并发<input id="parallel" type="number" min="1" max="32"></label>
+        <label class="wide">状态目录<input id="state-dir" readonly><small>通过启动参数 --state-dir 更改</small></label>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
