@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import agy, { parseModels, parseStream } from '../src/registry/adapters/agy.js';
 import codex from '../src/registry/adapters/codex.js';
-import dsh, { parseDump } from '../src/registry/adapters/dsh.js';
+import dsh, { discoverProviders, parseDump } from '../src/registry/adapters/dsh.js';
 import { ompModels } from '../src/registry/adapters/omp.js';
 import { jsonEvent } from '../src/runner/events.js';
 
@@ -101,8 +101,11 @@ test('DSH patches the headless profile and cleans up the overlay', async t => {
     '    provider: deepseek-official', '    model: deepseek-flash', '- id: jobs',
   ].join('\n');
   assert.deepEqual(parseDump(dump), { provider: 'deepseek-official', model: 'deepseek-flash' });
+  const empty = await mkdtemp(join(tmpdir(), 'agents-mcp-dsh-home-'));
+  t.after(() => rm(empty, { recursive: true, force: true }));
   const options = dsh.buildArgs({
     model: 'deepseek-official/deepseek-flash', effort: 'high', permission: 'read', prompt: 'Task:\nprobe',
+    env: { USERPROFILE: empty },
   });
   t.after(() => options.cleanup());
   const patchPath = options.args[options.args.indexOf('--patch') + 1];
@@ -114,4 +117,89 @@ test('DSH patches the headless profile and cleans up the overlay', async t => {
   assert.equal(options.stdin, 'Task:\nprobe');
   options.cleanup();
   await assert.rejects(readFile(dirname(patchPath), 'utf8'), { code: 'ENOENT' });
+});
+
+test('DSH offers the models the user configured and hands headless their key', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'agents-mcp-dsh-profile-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  await mkdir(join(home, '.dsh', 'profiles', 'desktop'), { recursive: true });
+  await writeFile(join(home, '.dsh', 'profiles', 'desktop', 'cordis.patch.yml'), [
+    '- id: llm-pi-ai',
+    '  name: "@deepseek-ai/dsh-llm-pi-ai"',
+    '  config:',
+    '    providers:',
+    '      new:',
+    '        displayName: new',
+    '        apiKeyEnv: NEW_API_KEY',
+    '        api: openai-completions',
+    '        baseURL: http://127.0.0.1:7863/v1',
+    '        models:',
+    '          - id: cn:deepseek-v4.1-flash',
+    '            name: Deepseek-V4.1-Flash',
+    '            reasoningEfforts:',
+    '              off: null',
+    '              low: low',
+    '              high: high',
+    '      many:',
+    '        apiKeyEnv: MANY_API_KEY',
+    '        models:',
+    '          - id: trae:glm-5.3',
+    '            name: GLM-5.3',
+    '- id: ui-chat',
+    '  name: "@deepseek-ai/dsh-client-ui-chat"',
+  ].join('\n'));
+  await writeFile(join(home, '.dsh', '.credentials.yaml'), [
+    'version: 1',
+    'records:',
+    '  client-connection/bridge:',
+    '    kind: oauth',
+    '    payload:',
+    '      version: 1',
+    '      secret: abc',
+    'refs:',
+    '  NEW_API_KEY: secret-value',
+    '  MANY_API_KEY: many-value',
+  ].join('\n'));
+
+  const providers = discoverProviders({ USERPROFILE: home });
+  assert.deepEqual(providers.map(p => p.name), ['new', 'many']);
+  assert.equal(providers[0].apiKeyEnv, 'NEW_API_KEY');
+  assert.deepEqual(providers[0].models[0].efforts, ['off', 'low', 'high']);
+  assert.deepEqual(providers[1].models.map(m => m.name), ['GLM-5.3']);
+
+  const probe = await dsh.probe({ exe: 'missing', env: { USERPROFILE: home } });
+  assert.equal(probe.ok, true);
+  assert.deepEqual(probe.models.map(m => m.id), ['new/cn:deepseek-v4.1-flash', 'many/trae:glm-5.3']);
+  assert.deepEqual(probe.models[0].efforts, ['off', 'low', 'high']);
+  assert.deepEqual(probe.warnings, []);
+
+  const unsigned = await dsh.probe({ exe: 'missing', env: { USERPROFILE: home, MANY_API_KEY: '' } });
+  assert.equal(unsigned.warnings.length, 0);
+
+  const options = dsh.buildArgs({ model: 'new/cn:deepseek-v4.1-flash', effort: 'high', permission: 'write',
+    prompt: 'Task:\ngo', env: { USERPROFILE: home } });
+  t.after(() => options.cleanup());
+  const patch = await readFile(options.args[options.args.indexOf('--patch') + 1], 'utf8');
+  assert.match(patch, /^      new:$/m);
+  assert.match(patch, /baseURL: http:\/\/127\.0\.0\.1:7863\/v1/);
+  assert.doesNotMatch(patch, /many:/);
+  assert.match(patch, /provider: new/);
+  assert.match(patch, /model: "cn:deepseek-v4.1-flash"/);
+  assert.deepEqual(options.env, { NEW_API_KEY: 'secret-value' });
+});
+
+test('DSH reads its own headless stream vocabulary', () => {
+  assert.deepEqual(dsh.parseStream(JSON.stringify({ type: 'text', text: 'part' })),
+    { type: 'assistant', text: 'part', sessionId: undefined });
+  assert.deepEqual(
+    dsh.parseStream(JSON.stringify({ type: 'final', sessionId: 's-1', text: 'done', reason: { kind: 'completed' } })),
+    { type: 'result', text: 'done', sessionId: 's-1' });
+  assert.deepEqual(
+    dsh.parseStream(JSON.stringify({ type: 'final', sessionId: 's-1', reason: { kind: 'error', error: { message: 'boom' } } })),
+    { type: 'error', text: 'boom', sessionId: 's-1' });
+  const thinking = dsh.parseStream(JSON.stringify({ type: 'thinking', text: 'considering' }));
+  assert.equal(thinking.type, 'reasoning');
+  assert.equal(thinking.text, 'considering');
+  const usage = dsh.parseStream(JSON.stringify({ type: 'status', phase: 'step_end', usage: { inputTokens: 3, outputTokens: 4 } }));
+  assert.deepEqual(usage.usage, { inputTokens: 3, outputTokens: 4 });
 });

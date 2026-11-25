@@ -27,7 +27,7 @@
 | `env` | 提供额外进程环境。用户代理覆盖只允许 HTTP_PROXY、HTTPS_PROXY 和 NO_PROXY。 |
 | `resumeArgs`、`parseSessionId` | 可选，使用一个明确的会话 ID 继续同一 CLI 会话。 |
 
-各适配器文件头记录了 argv 和核对状态。Codex 支持结构化输出 schema，Antigravity 使用 CLI 完整模型 ID 表达后缀定义的强度。Claude 的帮助给出的是通用强度选项，实际模型能力取决于后端。OMP 只读取本地 YAML 中的模型元数据。DSH 通过 `dsh --profile headless --dump-config` 读取 profile 默认模型（provider/model），运行期用临时 `--patch` overlay 覆盖 `agent-default-model`（可带 `reasoningEffort`），既不依赖 headless 不存在的模型参数，也不写用户的 profile 文件；缺少 `DEEPSEEK_API_KEY` 时给出警告。最后一个 `result` 优先作为答案，缺失时使用 assistant 文本。
+各适配器文件头记录了 argv 和核对状态。Codex 支持结构化输出 schema，Antigravity 使用 CLI 完整模型 ID 表达后缀定义的强度。Claude 的帮助给出的是通用强度选项，实际模型能力取决于后端。OMP 只读取本地 YAML 中的模型元数据。DSH 直读用户 profile 的 `llm-pi-ai` 供应商配置（`~/.dsh/profiles/*/cordis.patch.yml`，desktop 优先）作为模型目录，把选中的那个供应商原样搬进临时 overlay，再加 `agent-default-model`（provider/model/reasoningEffort）；headless 不读托管凭据库，因此 `apiKeyEnv` 先取进程环境、再取 `~/.dsh/.credentials.yaml` 的 `refs` 并通过子进程 env 传入。没有供应商配置时退回 `--dump-config` 读 profile 默认模型。最后一个 `result` 优先作为答案，缺失时使用 assistant 文本。
 
 当 `AGENTS_MCP_FIXTURES=1` 时，注册表只启动离线 fixture。普通运行时，`config.fixtures=true` 可在真实目录中额外注册 fixture。探测有 15 秒预算，失败信息保留在 `agents-cache.json`。滚动更新检测结果可使用 `agents_list` 的 `refresh`。
 
@@ -59,6 +59,8 @@ stdio 每行一个 JSON-RPC 消息，日志写入 stderr。HTTP 支持 `POST /mc
 **模式 B** 给主 Agent 提供任务、可用目录、专长和逐行 `@@AGENTS_MCP delegate {...}` / `@@AGENTS_MCP report {...}` 协议。有效委派占用全局配额。深度、次数、并发和总时限取服务配置与本次请求的较小值。续写使用适配器已识别的会话 ID，缺少该能力时使用有限长度的会话记录。写入权限由启动请求设定，并沿委派树继承。报告列出委派树及主 Agent 给出的工作目录产物引用。原生 MCP 自注册留待后续版本。
 
 ## 单文件可执行程序
+
+`scripts/connect-dsh.mjs` 在状态目录下生成一个 carrier bundle（package.json 声明 `dsh.bundle.patch`，patch 插入 `@deepseek-ai/dsh-mcp-client` 行，指向本仓库的 `bin/agents-mcp.js --mcp=stdio`），再调用 `dsh plugin <profile> add` 安装；desktop profile 由 DSH 窗口独占，此时只生成 bundle 并给出从 DSH 界面安装的提示。
 
 `scripts/build-exe.mjs` 用 esbuild 把 `src/app.js` 及其依赖打成一个 CommonJS 文件，再用 Node 的 `--build-sea` 生成 `dist/Agents-MCP.exe`。SEA 不解析相对模块，所以必须打包；面板的 `index.html`、`panel.js`、`panel.css` 作为 SEA assets 内嵌，运行时由 `src/assets.js` 经 `node:sea` 读取，因此 exe 不依赖仓库目录。打包版不包含 fixtures 与测试，`AGENTS_MCP_FIXTURES` 只对源码运行有效。esbuild 仅是开发依赖，运行时仍然只用 Node 标准库。
 

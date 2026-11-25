@@ -129,9 +129,9 @@ export async function createService({ stateDir, env = process.env, cwd = process
             await store.writeText(promptPath, safePrompt);
           }
           const options = { ...actor, cwd: target, permission: actor.writes ? 'write' : 'read',
-            prompt: safePrompt, promptPath, schemaPath, sessionId };
+            prompt: safePrompt, promptPath, schemaPath, sessionId, env: childEnv };
           spec = sessionId && adapter.resumeArgs ? adapter.resumeArgs(options) : adapter.buildArgs(options);
-          outcome = await run({ ...spec, exe: info.exe, cwd: target, env: childEnv, signal: controller.signal,
+          outcome = await run({ ...spec, exe: info.exe, cwd: target, env: { ...childEnv, ...spec.env }, signal: controller.signal,
             argvPrompt: spec.args.includes(safePrompt),
             timeoutMs: settings.stepTimeoutMinutes * 60_000, onSpawn: pid => {
               stepState.pid = pid;

@@ -49,7 +49,7 @@ node bin/agents-mcp.js --selftest                     # CLI 与模型目录探�
 | Pi | 本地 `models.json`、`models-store.json` 和思考强度设置。 |
 | OMP | 本地 `models.yml` 和 `config.yml`。需要能正常启动的 OMP。 |
 | Grok | `grok models` 和本地 `reasoning_effort`。需要已登录的 CLI。 |
-| DeepSeek Harness | 官方 `dsh` CLI（`npm i -g @deepseek-ai/dsh`）。headless profile 没有 `--model`/`--effort`，每次运行用临时 `--patch` 覆盖 `agent-default-model`，不改动用户 profile；需要 `DEEPSEEK_API_KEY`。 |
+| DeepSeek Harness | 官方 `dsh` CLI（`npm i -g @deepseek-ai/dsh`）。模型目录直接读你 DSH profile 里 `llm-pi-ai` 配置的供应商（例如 `new/cn:deepseek-v4.1-flash`），强度取该模型的 `reasoningEfforts`；headless 没有 `--model`/`--effort`，每次运行用临时 `--patch` 覆盖 `agent-default-model`，不改动用户 profile；headless 不读 DSH 的托管凭据库，凭据先取环境变量，再取 `~/.dsh/.credentials.yaml` 里同名 ref。 |
 
 Agent 启动或探测失败时，面板显示原因和处置提示。Agent 的登录、凭据和配置由各 CLI 自行管理。
 
@@ -81,6 +81,21 @@ npm run build:exe        # 输出 dist/Agents-MCP.exe
 - exe 未做代码签名，首次运行可能出现 SmartScreen 提示，选择"仍要运行"即可。
 - 打包版不含测试 fixture，`AGENTS_MCP_FIXTURES` 只对源码运行有效；Agent 仍按本机 CLI 的实际登录状态探测。
 - exe 运行时通过 npm 安装的 Agent（如 `dsh`、`pi`）会改用 PATH 上的 `node` 执行其 shim；缺少 Node.js 时这些 Agent 会显示不可用并提示安装。
+
+## 接入 DSH（MCP）
+
+让 DSH 直接调用这套工具，不用切窗口：
+
+```bash
+npm run connect:dsh                        # 生成 bridge bundle 并装进 profile
+npm run connect:dsh -- --profile web       # CLI 可管理的 profile
+npm run connect:dsh -- --remove            # 卸载
+```
+
+- bundle 生成在 `%APPDATA%\Agents-MCP\dsh-bundle`（带绝对路径，所以不放进仓库）。
+- `desktop` profile 归 DSH 窗口所有，启动器拒绝命令行安装：脚本会打印 bundle 路径，从 DSH 的插件页选择“从文件夹安装”即可（DSH 自己也能装）。
+- 装好后 DSH 会话里多出 `mcp__agents-mcp__agents_list`、`agents_flow_run`、`agents_status` 等工具，和面板共用同一个状态目录，所以在 DSH 里能看到面板上那批运行记录。
+- 桥接进程是 `node bin/agents-mcp.js --mcp=stdio`，只开 stdio，不抢占面板端口。
 
 ## 验证
 

@@ -12,7 +12,8 @@
   },
   "scripts": {
     "test": "node --test",
-    "build:exe": "node scripts/build-exe.mjs"
+    "build:exe": "node scripts/build-exe.mjs",
+    "connect:dsh": "node scripts/connect-dsh.mjs"
   },
   "keywords": [
     "mcp",
