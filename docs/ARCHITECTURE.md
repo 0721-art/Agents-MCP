@@ -5,7 +5,9 @@
 | 模块 | 职责 |
 | --- | --- |
 | `src/server.js`、`src/config.js` | 组装服务，校验配置和工作目录，记录并管理后台运行。 |
-| `src/app.js`、`src/launcher.js` | 双击入口：定位空闲端口、复用已运行实例、用默认浏览器打开面板。 |
+| `src/app.js`、`src/launcher.js` | 双击入口：定位空闲端口、复用已运行实例、用默认浏览器打开面板；`--install/--uninstall/--stop` 分别创建快捷方式、删除快捷方式和关闭正在运行的服务。 |
+| `src/shortcut.js` | 用 WScript.Shell 在桌面、开始菜单（可选启动项）写 `Agents-MCP.lnk`；路径由环境变量推导，便于测试。 |
+| `scripts/pack-zip.mjs` | 把 exe、使用说明与 LICENSE 打成 `dist/Agents-MCP-<版本>-win-x64.zip`。 |
 | `src/assets.js` | 读取面板静态文件：开发目录直接读盘，单文件 exe 从内嵌资源读取。 |
 | `src/mcp/` | JSON-RPC 2.0、工具声明、逐行 stdio 与 Streamable HTTP。 |
 | `src/panel/server.js`、`src/panel/folder.js`、`panel/` | 回环监听、静态页面、同源 JSON API，以及用系统文件夹对话框选择工作目录。 |
@@ -48,7 +50,7 @@ stdio 每行一个 JSON-RPC 消息，日志写入 stderr。HTTP 支持 `POST /mc
 | `agents_cancel` | `{runId}` → 取消状态 |
 | `agents_draft_role` | `{agent, model, effort, brief, task?, taskId?, cwd?}` → `{runId}` 或授权状态。完成后从状态中读取 `answer`。 |
 
-面板通过 `/api/agents`、`/api/config`、`/api/strengths`、`/api/gate/pending`、`/api/gate`、`/api/flow/validate`、`/api/flow/run`、`/api/delegate`、`/api/runs` 和 `/api/draft-role` 操作同一服务。
+面板通过 `/api/agents`、`/api/config`、`/api/strengths`、`/api/gate/pending`、`/api/gate`、`/api/flow/validate`、`/api/flow/run`、`/api/delegate`、`/api/runs`、`/api/draft-role`、`/api/presets`、`/api/update`、`/api/shortcuts` 和 `/api/draft-role` 操作同一服务。`POST /api/shutdown` 先回包再关闭监听与服务，`--stop` 与面板「关闭服务」都走它。
 
 ## 授权和执行
 

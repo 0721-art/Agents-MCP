@@ -421,3 +421,29 @@ test('HTTP serves the panel and shares gate and runs with MCP', async (t) => {
   const draft = await (await post('/api/draft-role', { ...actor, brief: 'Review changes' })).json();
   assert.match((await finish(service, draft.runId)).answer, /Review changes/);
 });
+
+test('the panel can ask the service to stop', async (t) => {
+  const { service } = await setup(t);
+  let stops = 0;
+  const http = await createHttp(service, { port: 0, onShutdown: () => { stops += 1; } });
+  t.after(() => new Promise(resolve => http.close(resolve)));
+  const base = 'http://127.0.0.1:' + http.address().port;
+  let response;
+  try {
+    response = await fetch(base + '/api/shutdown', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+  } catch (error) {
+    if (process.platform === 'win32' && error.cause?.code === 'EACCES') {
+      t.skip('Loopback TCP denied by this Windows sandbox.');
+      return;
+    }
+    throw error;
+  }
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { stopping: true });
+  for (let attempt = 0; attempt < 40 && stops === 0; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  assert.equal(stops, 1);
+});

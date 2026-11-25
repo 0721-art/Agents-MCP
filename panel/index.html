@@ -68,6 +68,16 @@
         <label>默认并发<input id="parallel" type="number" min="1" max="32"></label>
         <label class="wide">状态目录<input id="state-dir" readonly><small>通过启动参数 --state-dir 更改</small></label>
       </div>
+      <div class="box fields">
+        <h3>桌面快捷方式</h3>
+        <label class="check"><input id="shortcut-startup" type="checkbox">同时开机自启</label>
+        <div class="actions">
+          <button id="install-shortcut" type="button">创建快捷方式</button>
+          <button id="remove-shortcut" type="button">删除快捷方式</button>
+          <button id="stop-service" type="button" class="danger">关闭服务</button>
+        </div>
+        <small>快捷方式指向当前程序；关闭服务后可以安全删除 exe。</small>
+      </div>
     </section>
   </main>
 </body>

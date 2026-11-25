@@ -1,8 +1,10 @@
 import { createServer } from 'node:http';
+import { existsSync } from 'node:fs';
 import { problem } from '../config.js';
 import { readPanelFile } from '../assets.js';
 import { pickFolder } from './folder.js';
 import { errorInfo } from '../mcp/protocol.js';
+import { installShortcuts, removeShortcuts, runtimeExecutable } from '../shortcut.js';
 import { mcpHttp } from '../mcp/transport-http.js';
 
 const staticFiles = {
@@ -36,7 +38,7 @@ async function readJson(req) {
   }
 }
 
-export async function createHttp(service, { port = service.getConfig().port } = {}) {
+export async function createHttp(service, { port = service.getConfig().port, onShutdown } = {}) {
   const mcp = mcpHttp(service, readJson, sendJson);
   let expectedPort;
   const server = createServer(async (req, res) => {
@@ -89,11 +91,27 @@ export async function createHttp(service, { port = service.getConfig().port } = 
           const initial = typeof body.initial === 'string' && body.initial.trim() ? body.initial.trim() : undefined;
           return pickFolder({ initial });
         },
+        'POST /api/shutdown': async () => {
+          await value();
+          return { stopping: Boolean(onShutdown) };
+        },
+        'POST /api/shortcuts': async () => {
+          const body = await value();
+          const exe = runtimeExecutable();
+          if (!existsSync(exe)) throw problem('E_SHORTCUT', 'Build the executable first: npm run build:exe.');
+          return { created: await installShortcuts({ exe, startup: Boolean(body.startup) }) };
+        },
+        'POST /api/shortcuts/remove': async () => {
+          await value();
+          return { removed: await removeShortcuts() };
+        },
         'GET /api/runs': service.listRuns,
       };
       const route = method + ' ' + path;
       if (Object.hasOwn(operations, route)) {
         const data = await operations[route]();
+        // Answer first: the panel that asked for the stop should still see its reply.
+        if (route === 'POST /api/shutdown' && onShutdown) res.on('finish', () => { try { onShutdown(); } catch { /* already stopping */ } });
         const gateReply = route === 'GET /api/gate/pending' || Object.hasOwn(data, 'taskId');
         return sendJson(res, 200, gateReply ? data : service.redact(data));
       }

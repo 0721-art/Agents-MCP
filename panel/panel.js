@@ -557,6 +557,23 @@ wire('check-update', async () => {
   updateDismissed = false;
   await loadUpdate(true);
 });
+wire('install-shortcut', async () => {
+  const startup = $('shortcut-startup').checked;
+  const { created } = await api('/shortcuts', 'POST', { startup });
+  message('已创建快捷方式：' + created.join('、'));
+});
+wire('remove-shortcut', async () => {
+  const { removed } = await api('/shortcuts/remove', 'POST', {});
+  message(removed.length ? '已删除快捷方式：' + removed.join('、') : '没有找到已安装的快捷方式。');
+});
+wire('stop-service', async () => {
+  try {
+    await api('/shutdown', 'POST', {});
+  } catch {
+    // The process may drop the connection while exiting; that still means it stopped.
+  }
+  message('服务已停止，可以关闭此页面。');
+});
 function poll(action, ms) {
   const tick = async () => {
     try {

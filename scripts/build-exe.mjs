@@ -65,4 +65,20 @@ try {
 }
 const check = execFileSync(output, ['--check'], { encoding: 'utf8' });
 process.stdout.write(check);
-process.stdout.write('Built ' + output + '\n');
+
+// Node builds a console executable, so double-clicking flashes a terminal window. Flip the PE
+// subsystem to GUI (2) instead of console (3): the same process, no window. Progress and
+// failures still land in %APPDATA%\Agents-MCP\launcher.log.
+const image = readFileSync(output);
+const pe = image.readUInt32LE(0x3c);
+if (image.toString('latin1', pe, pe + 4) !== 'PE\0\0') throw new Error('The built file is not a PE executable.');
+const optional = pe + 24;
+const magic = image.readUInt16LE(optional);
+if (magic !== 0x10b && magic !== 0x20b) throw new Error('Unknown PE optional header magic ' + magic + '.');
+const subsystemAt = optional + 0x44;
+const subsystem = image.readUInt16LE(subsystemAt);
+if (subsystem !== 2) {
+  image.writeUInt16LE(2, subsystemAt);
+  await writeFile(output, image);
+}
+process.stdout.write('Built ' + output + ' (subsystem ' + subsystem + ' -> ' + image.readUInt16LE(subsystemAt) + ')\n');

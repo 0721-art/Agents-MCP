@@ -1,6 +1,16 @@
 # Agents-MCP
 
-Agents-MCP 是一个本地 MCP 服务，带有网页控制台。它读取已安装 Agent CLI 的模型配置，按任务调度子进程，并保存运行记录和报告。需要 Node.js 22 或更新版本。运行时只使用 Node 标准库。
+Agents-MCP 是一个本地 MCP 服务，带有网页控制台。它读取已安装 Agent CLI 的模型配置，按任务调度子进程，并保存运行记录和报告。运行时只使用 Node 标准库。
+
+## 三种使用方式
+
+| 方式 | 适合 | 怎么做 |
+| --- | --- | --- |
+| **下载即用** | 只想用，不装 Node、不看代码 | 从 [releases](https://github.com/0721-art/Agents-MCP/releases/latest) 下载 `Agents-MCP-win-x64.zip`，解压后双击 `Agents-MCP.exe`。面板自动在浏览器打开，**没有控制台窗口** |
+| **自己构建** | 想改代码 | `npm i` → `npm run build:exe` → 双击 `dist/Agents-MCP.exe`；或 `npm run pack:zip` 生成可分发的压缩包 |
+| **命令行 / MCP 主机** | 接入 Codex、Claude Code、DSH | `npm run connect:codex` / `connect:claude` / `connect:dsh`，或手动 `node bin/agents-mcp.js --mcp=stdio` |
+
+exe 是单文件自包含程序：内嵌 Node 运行时与面板资源，可以放任意目录，不需要仓库，不写注册表。桌面/开始菜单快捷方式和开机自启都能在面板「设置」页一键创建（等价于 `Agents-MCP.exe --install [--startup]`）。停止服务用面板「设置」页的「关闭服务」或 `Agents-MCP.exe --stop`。
 
 ## 系统要求
 
@@ -78,11 +88,14 @@ Agent 启动或探测失败时，面板显示原因和处置提示。Agent 的�
 npm run build:exe        # 输出 dist/Agents-MCP.exe
 ```
 
-双击 `Agents-MCP.exe` 会在本机启动服务并自动用默认浏览器打开面板 `http://127.0.0.1:4870/`，配置、授权和运行记录都在这个页面里调整。关闭控制台窗口即停止服务。exe 内嵌 Node 运行时和面板资源，可以复制到任意目录单独使用，不需要安装 Node.js，也不需要仓库文件。
+双击 `Agents-MCP.exe` 会在本机启动服务并自动用默认浏览器打开面板 `http://127.0.0.1:4870/`，配置、授权和运行记录都在这个页面里调整。exe 内嵌 Node 运行时和面板资源，可以复制到任意目录单独使用，不需要安装 Node.js，也不需要仓库文件。
 
+- 这是 GUI 子系统的可执行文件：双击不会弹控制台窗口，双击后只看到浏览器里打开的面板。
+- 停止服务：面板「设置」页 →「关闭服务」，或 `Agents-MCP.exe --stop`。
+- 快捷方式：面板「设置」页 →「创建快捷方式」（可勾选开机自启），等价于 `Agents-MCP.exe --install [--startup]`；删除用「删除快捷方式」或 `--uninstall`。
 - 再次双击不会重复启动：检测到本服务已在运行，只打开已有页面。
 - 端口被其他程序占用时，依次向后尝试 10 个端口，全部失败才报错。
-- 启动失败的原因同时写入 `%APPDATA%\Agents-MCP\launcher.log`。
+- 启动失败的原因同时写入 `%APPDATA%\Agents-MCP\launcher.log`（没有控制台，这是唯一能看到错误的地方）。
 - 可选参数：`--port N`、`--state-dir DIR`、`--no-open`（只启动服务、不打开浏览器）、`--check`（只校验可执行文件）。
 - exe 未做代码签名，首次运行可能出现 SmartScreen 提示，选择"仍要运行"即可。
 - 打包版不含测试 fixture，`AGENTS_MCP_FIXTURES` 只对源码运行有效；Agent 仍按本机 CLI 的实际登录状态探测。
