@@ -6,7 +6,9 @@ import { run } from '../runner/exec.js';
 
 // FolderBrowserDialog needs an STA thread and Windows PowerShell 5.1 ships with every supported
 // Windows, so the picker does not depend on pwsh 7 being on PATH. The chosen path goes through a
-// file because a redirected PowerShell console mangles non-ASCII paths.
+// file because a redirected PowerShell console mangles non-ASCII paths. The dialog is owned by a
+// transparent, always-on-top form; otherwise a dialog opened on behalf of a background service can
+// appear behind the browser and look like a hang.
 const quote = value => "'" + String(value).replace(/'/g, "''") + "'";
 
 export function folderScript(output, initial) {
@@ -16,9 +18,20 @@ export function folderScript(output, initial) {
     "$dialog.Description = '选择 Agent 的工作目录'",
     '$dialog.ShowNewFolderButton = $true',
     initial ? '$dialog.SelectedPath = ' + quote(initial) : '',
-    'if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {',
+    '$owner = New-Object System.Windows.Forms.Form',
+    "$owner.Text = 'Agents-MCP'",
+    "$owner.FormBorderStyle = 'None'",
+    '$owner.ShowInTaskbar = $false',
+    '$owner.TopMost = $true',
+    '$owner.Opacity = 0',
+    '$owner.Size = "1,1"',
+    "$owner.StartPosition = 'CenterScreen'",
+    '$owner.Show()',
+    '[void]$owner.Activate()',
+    'if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {',
     '  [System.IO.File]::WriteAllText(' + quote(output) + ', $dialog.SelectedPath, [System.Text.Encoding]::UTF8)',
     '}',
+    '$owner.Close()',
   ].filter(Boolean).join('\r\n');
 }
 
@@ -31,11 +44,14 @@ export async function pickFolder({ initial, env = process.env, timeoutMs = 240_0
   const exe = join(env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   try {
     const result = await run({
-      exe, args: ['-NoProfile', '-NonInteractive', '-STA', '-Command', folderScript(output, initial)], env, timeoutMs,
+      exe,
+      args: ['-NoProfile', '-NonInteractive', '-STA', '-WindowStyle', 'Hidden', '-Command', folderScript(output, initial)],
+      env, timeoutMs, hideWindow: false,
     });
     if (result.cancelled) return { cancelled: true };
     if (result.code !== 0) {
-      throw problem('E_PICKER', 'The folder picker could not open.', (result.stderrTail || '').trim().slice(0, 400) || undefined);
+      const detail = (result.stderrTail || '').trim().slice(0, 300);
+      throw problem('E_PICKER', 'The folder picker exited with code ' + result.code + (detail ? ': ' + detail : '.'), 'Open the folder dialog from the source build or type the directory path.');
     }
     let chosen = '';
     try {

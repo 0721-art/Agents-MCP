@@ -56,7 +56,7 @@ function windowsArgLength(arg) {
   return length;
 }
 
-export async function run({ exe, args = [], stdin, cwd, env = process.env, timeoutMs = 30_000, signal, onLine, onSpawn, argvPrompt }) {
+export async function run({ exe, args = [], stdin, cwd, env = process.env, timeoutMs = 30_000, signal, onLine, onSpawn, argvPrompt, hideWindow = true }) {
   const started = Date.now();
   if (signal?.aborted) return { cancelled: true, durationMs: 0, stdoutTail: '', stderrTail: '' };
   const spec = command(exe, args, env);
@@ -70,7 +70,7 @@ export async function run({ exe, args = [], stdin, cwd, env = process.env, timeo
     }
   }
   const child = spawn(spec.exe, spec.args, {
-    cwd, env, shell: false, windowsHide: true, detached: !windows,
+    cwd, env, shell: false, windowsHide: hideWindow, detached: !windows,
     windowsVerbatimArguments: spec.windowsVerbatimArguments, stdio: ['pipe', 'pipe', 'pipe'],
   });
   return new Promise((resolveRun, reject) => {
