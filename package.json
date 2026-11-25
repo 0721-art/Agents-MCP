@@ -1,0 +1,33 @@
+{
+  "name": "agents-mcp",
+  "version": "0.1.0",
+  "description": "Standalone MCP server plus local panel that lets one agent orchestrate the other agent CLIs installed on this machine.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "multi-agent",
+    "orchestration",
+    "codex",
+    "antigravity",
+    "claude-code"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0721-art/Agents-MCP.git"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "panel/",
+    "README.md",
+    "LICENSE"
+  ]
+}
