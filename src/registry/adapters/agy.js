@@ -34,8 +34,22 @@ export function parseStream(line) {
   }
   if (event.event === 'step_update') {
     const update = event.step_update ?? {};
-    if (update.state === 'ACTIVE' && update.text_delta) return { type: 'assistant', text: update.text_delta, sessionId };
-    return { type: 'raw', data: { type: 'step_update', step: update.step_type, state: update.state }, sessionId };
+    const usage = update.usage ? {
+      ...(Number.isFinite(update.usage.input_tokens) && { inputTokens: update.usage.input_tokens }),
+      ...(Number.isFinite(update.usage.output_tokens) && { outputTokens: update.usage.output_tokens }),
+      ...(Number.isFinite(update.usage.thinking_tokens) && { reasoningTokens: update.usage.thinking_tokens }),
+    } : undefined;
+    const attached = usage && Object.keys(usage).length ? { usage } : {};
+    const thought = update.text_delta ?? update.text;
+    if ((update.step_type === 'thought' || update.step_type === 'thinking') && typeof thought === 'string') {
+      return { type: 'reasoning', text: thought, sessionId, ...attached };
+    }
+    if (update.step_type === 'agent_response' && typeof update.text_delta === 'string' && update.text_delta) {
+      // The closing DONE chunk carries the last answer fragment together with the usage counts.
+      return { type: 'assistant', text: update.text_delta, sessionId, ...attached };
+    }
+    // Antigravity reports thinking tokens without the thinking text, so keep the count visible.
+    return { type: 'raw', data: { type: 'step_update', step: update.step_type, state: update.state }, sessionId, ...attached };
   }
   if (event.event === 'error') return { type: 'error', text: event.error?.message ?? event.error, sessionId };
   return { type: 'raw', data: { type: event.event }, sessionId };

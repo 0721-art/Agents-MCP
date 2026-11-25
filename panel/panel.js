@@ -394,6 +394,27 @@ async function loadRun(id) {
   const oldLog = $('run-detail').querySelector('pre');
   const scroll = oldLog && oldLog.scrollTop + oldLog.clientHeight < oldLog.scrollHeight - 24 ? oldLog.scrollTop : null;
   const children = [heading, el('p', '工作目录 · ' + run.cwd, 'path'), table];
+  // Each step keeps its own reasoning, because the panel shows who thought what and when.
+  const reasoning = new Map();
+  for (const event of run.events) {
+    if (event.type !== 'reasoning' || typeof event.text !== 'string' || !event.text) continue;
+    const entry = reasoning.get(event.step) ?? { text: '' };
+    entry.text += (entry.text ? '\n\n' : '') + event.text;
+    reasoning.set(event.step, entry);
+  }
+  const thinkingList = el('div', undefined, 'thinking-list');
+  for (const [step, status] of Object.entries(run.steps)) {
+    const notes = reasoning.get(step);
+    const tokens = status.tokens && status.tokens.reasoningTokens;
+    const details = el('details', undefined, 'thinking');
+    details.append(el('summary', [step, status.agent, status.model,
+      tokens === undefined ? undefined : '思考 ' + tokens + ' tokens'].filter(Boolean).join(' · ')));
+    details.open = notes ? status.status === 'running' : false;
+    details.append(notes ? el('pre', notes.text, 'thinking-text')
+      : el('p', '该 Agent 没有输出思考正文，只记录了 token 用量。', 'hint'));
+    thinkingList.append(details);
+  }
+  children.push(el('h3', '思考过程'), thinkingList.childElementCount ? thinkingList : el('p', '暂无思考记录。'));
   if (Array.isArray(run.delegationTree)) {
     const branches = parent => {
       const list = el('ul');

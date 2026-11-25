@@ -7,6 +7,7 @@ import agy, { parseModels, parseStream } from '../src/registry/adapters/agy.js';
 import codex from '../src/registry/adapters/codex.js';
 import dsh, { parseDump } from '../src/registry/adapters/dsh.js';
 import { ompModels } from '../src/registry/adapters/omp.js';
+import { jsonEvent } from '../src/runner/events.js';
 
 test('Codex reads exact local model IDs and reasoning levels', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'agents-mcp-codex-'));
@@ -53,8 +54,33 @@ test('Antigravity stream events yield the final answer and session', () => {
   assert.deepEqual(agy.resumeArgs({ model: 'neon-low', sessionId: 'c1' }).args.slice(-2), ['--resume', 'c1']);
 });
 
-test('OMP reads explicit model efforts without exposing other YAML fields', () => {
-  const yaml = [
+test('reasoning text and thinking tokens survive every stream shape in use', () => {
+  assert.deepEqual(jsonEvent(JSON.stringify({ type: 'item.completed',
+    item: { type: 'reasoning', summary: [{ type: 'summary_text', text: 'Checked 17*23.' }, { text: 'Then 391.' }] } })),
+  { type: 'reasoning', text: 'Checked 17*23.\nThen 391.', sessionId: undefined });
+  assert.deepEqual(jsonEvent(JSON.stringify({ type: 'assistant',
+    message: { role: 'assistant', content: [{ type: 'thinking', thinking: 'Hidden reasoning.' }] } })),
+  { type: 'reasoning', text: 'Hidden reasoning.', sessionId: undefined });
+  assert.equal(jsonEvent(JSON.stringify({ type: 'reasoning_delta', delta: 'Partial thought' })).text, 'Partial thought');
+  assert.equal(jsonEvent(JSON.stringify({ type: 'message', reasoning_content: 'Direct field' })).text, 'Direct field');
+  assert.deepEqual(jsonEvent(JSON.stringify({ type: 'turn.completed',
+    usage: { output_tokens: 5, reasoning_output_tokens: 42 } })).usage, { outputTokens: 5, reasoningTokens: 42 });
+  assert.equal(jsonEvent(JSON.stringify({ type: 'thread.started', thread_id: 't1' })).usage, undefined);
+});
+
+test('Antigravity keeps thinking deltas and thinking token counts', () => {
+  const thought = parseStream(JSON.stringify({ event: 'step_update', step_update:
+    { step_type: 'thought', state: 'ACTIVE', text_delta: 'Weighing options.' } }));
+  assert.deepEqual({ type: thought.type, text: thought.text }, { type: 'reasoning', text: 'Weighing options.' });
+  const done = parseStream(JSON.stringify({ event: 'step_update', step_update:
+    { step_type: 'agent_response', state: 'DONE', usage: { input_tokens: 1, output_tokens: 2, thinking_tokens: 3 } } }));
+  assert.deepEqual(done.usage, { inputTokens: 1, outputTokens: 2, reasoningTokens: 3 });
+  assert.equal(parseStream(JSON.stringify({ event: 'step_update', step_update:
+    { step_type: 'agent_response', state: 'DONE', text_delta: 'done\n', usage: { thinking_tokens: 40 } } })).text, 'done\n',
+  'a final answer chunk must not be dropped when usage rides along');
+});
+
+test('OMP reads explicit model efforts without exposing other YAML fields', () => {  const yaml = [
     'providers:', '  sample:', '    models:', '      - contextWindow: 123',
     '        id: sample/model', '        name: Configured model', '        reasoning: true',
     '        thinking:', '          efforts:', '            - low', '            - max', '          mode: effort',

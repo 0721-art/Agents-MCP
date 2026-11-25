@@ -66,4 +66,11 @@ table { width: 100%; border-collapse: collapse; font-size: .86rem; }
 th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 7px; overflow-wrap: anywhere; }
 pre { background: #13213a; color: #e5ecfa; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 19rem; overflow: auto; padding: 10px; margin: 0; border-radius: 8px; }
 a { color: #244caf; }
+.thinking-list { display: grid; gap: 8px; }
+.thinking { border: 1px solid var(--line); border-radius: 8px; background: #fbfcfe; }
+.thinking summary { cursor: pointer; padding: 8px 10px; font-size: .86rem; overflow-wrap: anywhere; }
+.thinking[open] summary { border-bottom: 1px solid var(--line); }
+.thinking pre { border-radius: 0 0 8px 8px; max-height: 24rem; }
+.thinking p { padding: 8px 10px; }
+.hint { color: var(--muted); font-size: .84rem; }
 @media (max-width: 680px) { main { padding: 14px; } .task-fields, .run-layout { grid-template-columns: 1fr; } }

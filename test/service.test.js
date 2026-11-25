@@ -105,6 +105,25 @@ test('gate persists and Mode A hands off artifacts through a review loop', async
   assert.equal((await restarted.delegate({ ...actor, task: 'Delegation' })).status, 'confirmation_required');
 });
 
+test('a run keeps each agent reasoning beside its answer', async t => {
+  const { dir, service } = await setup(t);
+  const single = {
+    task: 'thinking-demo',
+    participants: [{ id: 'author', ...actor, writes: true }],
+    steps: [{ id: 'write', participant: 'author', task: 'thinking-demo' }],
+  };
+  const pending = await service.runFlow(single);
+  assert.equal(pending.status, 'confirmation_required');
+  await service.gate({ taskId: pending.taskId, decision: 'enable' });
+  const { runId } = await service.runFlow(single);
+  const result = await finish(service, runId);
+  const reasoning = result.events.filter(event => event.type === 'reasoning').map(event => [event.step, event.text]);
+  assert.deepEqual(reasoning, [['write', 'Fixture reasons about the task.']]);
+  assert.equal(result.steps.write.tokens.reasoningTokens, 42);
+  const transcript = await readFile(join(dir, 'runs', runId, 'steps', 'write.md'), 'utf8');
+  assert.match(transcript, /# Thinking\n\nFixture reasons about the task\.\n\n# Answer/);
+});
+
 test('gate preserves the task ID in responses and across restarts', async t => {
   const taskId = 'fixture-gate-id-823';
   const env = { FIXTURE_TOKEN: taskId };

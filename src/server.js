@@ -84,7 +84,13 @@ export async function createService({ stateDir, env = process.env, cwd = process
         .catch(error => { eventError ??= error; });
     };
     const stepPath = step => join(root, 'steps', step + '.md');
-    const transcript = (step, prompt, answer) => store.writeText(stepPath(step), '# Prompt\n\n' + prompt + '\n\n# Answer\n\n' + answer + '\n');
+    // Reasoning is kept per step so both the panel and the stored transcript can show it.
+    const thinking = new Map();
+    const transcript = (step, prompt, answer) => {
+      const notes = thinking.get(step);
+      const section = notes?.text ? '\n\n# Thinking\n\n' + notes.text : '';
+      return store.writeText(stepPath(step), '# Prompt\n\n' + prompt + section + '\n\n# Answer\n\n' + answer + '\n');
+    };
     const ctx = {
       state, save, registry, config: settings, signal: controller.signal, abort: () => controller.abort(),
       redact: store.redact, stepPath, transcript,
@@ -131,6 +137,13 @@ export async function createService({ stateDir, env = process.env, cwd = process
             }, onLine: line => {
               const event = store.redact(normalize(adapter, line));
               emit({ ...event, step });
+              if (event.usage) Object.assign(stepState, { tokens: { ...(stepState.tokens ?? {}), ...event.usage } });
+              if (event.type === 'reasoning' && typeof event.text === 'string' && event.text) {
+                const notes = thinking.get(step) ?? { text: '' };
+                const room = 64 * 1024 - notes.text.length;
+                if (room > 0) notes.text += (notes.text ? '\n\n' : '') + event.text.slice(0, room);
+                thinking.set(step, notes);
+              }
               sessionId = adapter.parseSessionId?.(event) || sessionId;
               if (event.type === 'assistant' && typeof event.text === 'string') {
                 assistant.push(event.text);

@@ -84,11 +84,11 @@ export async function createStore(dir, env) {
       try {
         handle = await open(path, 'r');
         const { size } = await handle.stat();
-        const start = Math.max(0, size - 128 * 1024);
+        const start = Math.max(0, size - 256 * 1024);
         const buffer = Buffer.alloc(size - start);
         const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
         const lines = buffer.subarray(0, bytesRead).toString('utf8').split('\n');
-        return lines.slice(start ? 1 : 0, -1).slice(-40).map(line => parseStateJson(line, path));
+        return lines.slice(start ? 1 : 0, -1).slice(-120).map(line => parseStateJson(line, path));
       } catch (error) {
         if (error.code !== 'ENOENT') throw error;
         return [];
