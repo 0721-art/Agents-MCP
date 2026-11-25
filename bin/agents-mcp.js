@@ -32,8 +32,6 @@ async function main() {
     }
     return;
   }
-  const http = values.panel || values.mcp === 'http' ? await createHttp(service, { port }) : undefined;
-  if (http) process.stderr.write('Agents-MCP panel at http://127.0.0.1:' + http.address().port + '/\n');
   let stdio;
   let closing;
   const close = () => {
@@ -45,6 +43,10 @@ async function main() {
     })();
     return closing;
   };
+  const http = values.panel || values.mcp === 'http'
+    ? await createHttp(service, { port, onShutdown: () => close().then(() => process.exit(0), () => process.exit(1)) })
+    : undefined;
+  if (http) process.stderr.write('Agents-MCP panel at http://127.0.0.1:' + http.address().port + '/\n');
   process.once('SIGINT', close);
   process.once('SIGTERM', close);
   if (values.mcp === 'stdio') stdio = startStdio(service, { onClose: http ? undefined : () => service.close() });

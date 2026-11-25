@@ -1,5 +1,13 @@
 # 更新记录
 
+## 0.1.3
+
+- **命令行启动也能被停止**： 或  现在同样支持面板「关闭服务」与 （此前只有双击启动的进程能被停止）。
+
+## 0.1.3
+
+- **命令行启动也能被停止**：以 `node bin/agents-mcp.js --panel` 或 `--mcp=http` 启动的进程现在同样支持面板「关闭服务」与 `Agents-MCP.exe --stop`；此前只有双击启动的进程能被停止。
+
 ## 0.1.2
 
 - **下载即用**：release 里直接提供 `Agents-MCP-win-x64.zip`（exe + 使用说明 + LICENSE），解压双击即可，不需要 Node.js。`npm run pack:zip` 可自行生成同一个包。
