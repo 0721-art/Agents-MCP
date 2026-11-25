@@ -11,7 +11,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "build:exe": "node scripts/build-exe.mjs"
   },
   "keywords": [
     "mcp",
@@ -34,5 +35,8 @@
     "docs/ARCHITECTURE.md",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
 }

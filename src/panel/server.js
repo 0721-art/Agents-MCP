@@ -1,6 +1,6 @@
-import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { problem } from '../config.js';
+import { readPanelFile } from '../assets.js';
 import { errorInfo } from '../mcp/protocol.js';
 import { mcpHttp } from '../mcp/transport-http.js';
 
@@ -55,7 +55,7 @@ export async function createHttp(service, { port = service.getConfig().port } = 
       if (path === '/mcp') return await mcp(req, res);
       if (method === 'GET' && Object.hasOwn(staticFiles, path)) {
         const [file, type] = staticFiles[path];
-        const content = await readFile(new URL('../../panel/' + file, import.meta.url));
+        const content = await readPanelFile(file);
         res.writeHead(200, { 'Content-Type': type + '; charset=utf-8' }).end(content);
         return;
       }

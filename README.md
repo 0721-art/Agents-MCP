@@ -39,6 +39,21 @@ node bin/agents-mcp.js --selftest                     # CLI 与模型目录探�
 
 Agent 启动或探测失败时，面板显示原因和处置提示。Agent 的登录、凭据和配置由各 CLI 自行管理。
 
+## 双击启动（单文件 exe）
+
+```powershell
+npm run build:exe        # 输出 dist/Agents-MCP.exe
+```
+
+双击 `Agents-MCP.exe` 会在本机启动服务并自动用默认浏览器打开面板 `http://127.0.0.1:4870/`，配置、授权和运行记录都在这个页面里调整。关闭控制台窗口即停止服务。exe 内嵌 Node 运行时和面板资源，可以复制到任意目录单独使用，不需要安装 Node.js，也不需要仓库文件。
+
+- 再次双击不会重复启动：检测到本服务已在运行，只打开已有页面。
+- 端口被其他程序占用时，依次向后尝试 10 个端口，全部失败才报错。
+- 启动失败的原因同时写入 `%APPDATA%\Agents-MCP\launcher.log`。
+- 可选参数：`--port N`、`--state-dir DIR`、`--no-open`（只启动服务、不打开浏览器）、`--check`（只校验可执行文件）。
+- exe 未做代码签名，首次运行可能出现 SmartScreen 提示，选择"仍要运行"即可。
+- 打包版不含测试 fixture，`AGENTS_MCP_FIXTURES` 只对源码运行有效；Agent 仍按本机 CLI 的实际登录状态探测。
+
 ## 验证
 
 ```powershell

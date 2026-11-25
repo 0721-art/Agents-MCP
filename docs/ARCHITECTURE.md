@@ -5,6 +5,8 @@
 | 模块 | 职责 |
 | --- | --- |
 | `src/server.js`、`src/config.js` | 组装服务，校验配置和工作目录，记录并管理后台运行。 |
+| `src/app.js`、`src/launcher.js` | 双击入口：定位空闲端口、复用已运行实例、用默认浏览器打开面板。 |
+| `src/assets.js` | 读取面板静态文件：开发目录直接读盘，单文件 exe 从内嵌资源读取。 |
 | `src/mcp/` | JSON-RPC 2.0、工具声明、逐行 stdio 与 Streamable HTTP。 |
 | `src/panel/server.js`、`panel/` | 回环监听、静态页面和同源 JSON API。 |
 | `src/registry/` | 定位 CLI、并行探测目录、缓存结果并返回可操作的健康提示。 |
@@ -54,6 +56,12 @@ stdio 每行一个 JSON-RPC 消息，日志写入 stderr。HTTP 支持 `POST /mc
 **模式 A** 使用 `{task, participants, steps, loops?}`。参与者指定 Agent、模型、强度、角色、职责和写入权限。步骤指定参与者、任务、`dependsOn`、`inputs` 和 `produces`。调度器验证有向无环图，再按依赖和并发上限执行。下游通过产物绝对路径与短摘要接收交接。`{from, to, until: "PASS", maxRounds}` 定义评审循环，`maxRounds` 包含首轮。收到 `CHANGES_REQUESTED` 后，评审路径回到上游起点并携带反馈。循环之外的相关下游等待评审通过。子进程运行失败、超时或明确阻塞会结束该分支。运行结束后生成汇总报告。
 
 **模式 B** 给主 Agent 提供任务、可用目录、专长和逐行 `@@AGENTS_MCP delegate {...}` / `@@AGENTS_MCP report {...}` 协议。有效委派占用全局配额。深度、次数、并发和总时限取服务配置与本次请求的较小值。续写使用适配器已识别的会话 ID，缺少该能力时使用有限长度的会话记录。写入权限由启动请求设定，并沿委派树继承。报告列出委派树及主 Agent 给出的工作目录产物引用。原生 MCP 自注册留待后续版本。
+
+## 单文件可执行程序
+
+`scripts/build-exe.mjs` 用 esbuild 把 `src/app.js` 及其依赖打成一个 CommonJS 文件，再用 Node 的 `--build-sea` 生成 `dist/Agents-MCP.exe`。SEA 不解析相对模块，所以必须打包；面板的 `index.html`、`panel.js`、`panel.css` 作为 SEA assets 内嵌，运行时由 `src/assets.js` 经 `node:sea` 读取，因此 exe 不依赖仓库目录。打包版不包含 fixtures 与测试，`AGENTS_MCP_FIXTURES` 只对源码运行有效。esbuild 仅是开发依赖，运行时仍然只用 Node 标准库。
+
+启动器不写入 Agent 配置，只使用状态目录。端口按配置起点依次尝试 10 个，全部占用时报 `E_PORT`；检测到本服务已在某端口运行时直接打开该页面并退出，实现单实例。失败原因同时写入标准错误和状态目录下的 `launcher.log`。
 
 ## 状态目录
 
