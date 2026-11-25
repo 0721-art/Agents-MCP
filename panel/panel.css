@@ -58,6 +58,8 @@ button:disabled { opacity: .56; cursor: wait; }
 .gate { background: #fff3d8; border: 1px solid #e3be71; border-radius: 8px; padding: 12px; margin-bottom: 12px; display: grid; gap: 8px; }
 .gate .subheading { margin: 0; }
 .gate p { overflow-wrap: anywhere; }
+.update { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: #e7f2e9; border: 1px solid #8fbd9a; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+.update-text { flex: 1 1 14rem; overflow-wrap: anywhere; }
 #message { padding: 10px 12px; margin-top: 12px; border-left: 3px solid var(--primary); background: #e4ebff; white-space: pre-wrap; overflow-wrap: anywhere; }
 #message[data-error] { border-color: #b64940; background: #ffe9e6; }
 .run-layout { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(0, 2.5fr); gap: 12px; align-items: start; }

@@ -103,6 +103,51 @@ async function api(path, method = 'GET', data) {
   if (!response.ok) throw new Error([value.message, value.remedy].filter(Boolean).join('\n') || '请求失败');
   return value;
 }
+// A newer release is announced once per page load; 稍后 hides it until the next reload.
+// Only a git checkout can update itself — a packaged exe opens the release page instead.
+let updateInfo;
+let updateDismissed = false;
+function renderUpdate() {
+  const box = $('update');
+  box.replaceChildren();
+  if (!updateInfo?.newer || updateDismissed) {
+    box.hidden = true;
+    return;
+  }
+  const link = el('a', '发布说明');
+  link.href = updateInfo.url;
+  link.target = '_blank';
+  link.rel = 'noreferrer';
+  const action = updateInfo.checkout
+    ? button('更新到 v' + updateInfo.latest, async () => {
+      const result = await api('/update/apply', 'POST', {});
+      updateDismissed = true;
+      renderUpdate();
+      message(result.restart || '已更新到最新版本，重启服务后生效。');
+    }, 'primary')
+    : button('打开发布页', async () => {
+      window.open(updateInfo.url, '_blank', 'noopener');
+    }, 'primary');
+  box.append(
+    el('span', '发现新版本 v' + updateInfo.latest + '（当前 v' + updateInfo.current + '）', 'update-text'),
+    link,
+    action,
+    button('稍后', async () => {
+      updateDismissed = true;
+      renderUpdate();
+    }),
+  );
+  box.hidden = false;
+}
+async function loadUpdate(fresh = false) {
+  try {
+    updateInfo = await api('/update' + (fresh ? '?fresh=1' : ''));
+    renderUpdate();
+    if (fresh && !updateInfo.newer) message('已是当前最新版本 v' + updateInfo.current + '。');
+  } catch (error) {
+    message(error.message, true);
+  }
+}
 async function switchTab(id) {
   tab = id;
   document.querySelectorAll('.page').forEach(page => { page.hidden = page.id !== id; });
@@ -332,6 +377,7 @@ function renderSettings() {
   $('step-timeout').value = config.stepTimeoutMinutes;
   $('parallel').value = config.maxParallel;
   $('state-dir').value = config.stateDir;
+  $('version').value = config.version ?? '';
   $('caps').replaceChildren(...Object.entries(caps).map(([key, label]) => {
     const value = capValues[key] ?? config.modeB[key];
     capValues[key] = value;
@@ -506,6 +552,11 @@ wire('refresh-runs', loadRuns);
 
 loadAgents().then(renderSettings).catch(error => message(error.message, true));
 loadPresets().catch(error => message(error.message, true));
+loadUpdate().catch(() => {});
+wire('check-update', async () => {
+  updateDismissed = false;
+  await loadUpdate(true);
+});
 function poll(action, ms) {
   const tick = async () => {
     try {

@@ -9,6 +9,7 @@ import { createRegistry } from './registry/index.js';
 import { deletePreset, readPresets, savePreset } from './presets.js';
 import { run } from './runner/exec.js';
 import { normalize } from './runner/events.js';
+import { applyUpdate as upgradeCheckout, checkForUpdate, version } from './update.js';
 
 const request = value => {
   if (!object(value)) throw problem('E_INPUT', 'Expected an object.');
@@ -242,7 +243,10 @@ export async function createService({ stateDir, env = process.env, cwd = process
     redact: store.redact, listAgents: args => registry.list(args), pending: () => gate.pending(),    gate: args => gate.decide(request(args)),
     presets: () => readPresets(store),
     savePreset: input => savePreset(store, input),
-    deletePreset: id => deletePreset(store, id), getConfig: () => ({ ...config, stateDir: store.dir }),
+    deletePreset: id => deletePreset(store, id), getConfig: () => ({ ...config, stateDir: store.dir, version: version }),
+    // The panel asks once on load and again only when the user presses 检查更新.
+    update: ({ fresh = false } = {}) => checkForUpdate({ stateDir: store.dir, env, fresh }),
+    applyUpdate: () => upgradeCheckout({ env }),
     setConfig: patch => updateConfig(() => patch),
     override(id, value) {
       if (!identifier(id) || !object(value)) throw problem('E_CONFIG', 'Invalid executable override.');

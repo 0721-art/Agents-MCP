@@ -77,6 +77,11 @@ export async function createHttp(service, { port = service.getConfig().port } = 
         'POST /api/flow/run': async () => service.runFlow(await value()),
         'GET /api/presets': () => service.presets(),
         'POST /api/presets': async () => service.savePreset(await value()),
+        'GET /api/update': () => service.update({ fresh: url.searchParams.get('fresh') === '1' }),
+        'POST /api/update/apply': async () => {
+          await value();
+          return service.applyUpdate();
+        },
         'POST /api/delegate': async () => service.delegate(await value()),
         'POST /api/draft-role': async () => service.draftRole(await value()),
         'POST /api/pick-folder': async () => {

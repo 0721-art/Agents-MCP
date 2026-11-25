@@ -2,7 +2,7 @@
 // The bundle embeds panel/index.html, panel.js and panel.css, so the executable runs without the
 // repository and without a separate Node.js install.
 import { execFileSync } from 'node:child_process';
-import { closeSync, openSync } from 'node:fs';
+import { closeSync, openSync, readFileSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,9 @@ try {
   if (error.code !== 'ENOENT') throw error;
 }
 
+// The exe has no package.json beside it, so the version it reports is baked in here.
+const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+
 await build({
   entryPoints: [join(root, 'src', 'app.js')],
   outfile: bundle,
@@ -36,6 +39,7 @@ await build({
   target: 'node22',
   legalComments: 'none',
   logLevel: 'warning',
+  define: { 'process.env.AGENTS_MCP_VERSION': JSON.stringify(version) },
 });
 
 await writeFile(config, JSON.stringify({

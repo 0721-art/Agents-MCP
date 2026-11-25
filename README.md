@@ -88,6 +88,15 @@ npm run build:exe        # 输出 dist/Agents-MCP.exe
 - 打包版不含测试 fixture，`AGENTS_MCP_FIXTURES` 只对源码运行有效；Agent 仍按本机 CLI 的实际登录状态探测。
 - exe 运行时通过 npm 安装的 Agent（如 `dsh`、`pi`）会改用 PATH 上的 `node` 执行其 shim；缺少 Node.js 时这些 Agent 会显示不可用并提示安装。
 
+## 更新提醒
+
+面板加载时会查一次 GitHub 上的最新 release，结果缓存在状态目录 6 小时（设置页的"检查更新"按钮会强制刷新）。发现新版本时顶部出现提示条，按运行方式给出不同动作：
+
+- **git checkout 运行**：按钮是"更新到 vX"，执行 `git pull --ff-only` + `npm install`，完成后重启服务生效。
+- **打包 exe 运行**：按钮是"打开发布页"，因为运行中的 exe 无法替换自己，下载新 exe 覆盖即可。
+- 点"稍后"只是本次页面隐藏提示，重新加载会再提醒。
+- 不想联网检查：`AGENTS_MCP_NO_UPDATE_CHECK=1`。设置页始终显示当前版本。
+
 ## 接入其它 Agent（MCP）
 
 让 Codex、Claude Code、DSH 直接调用这套工具，不用切窗口：

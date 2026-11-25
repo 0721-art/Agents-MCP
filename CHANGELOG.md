@@ -1,7 +1,8 @@
 # 更新记录
 
-## 0.1.1（未发布）
+## 0.1.1
 
+- **更新提醒**：面板加载时检查一次 GitHub release（结果缓存 6 小时，可在设置里点"检查更新"强制刷新）；发现新版本时顶部出现提示条。从 git checkout 运行的版本可以直接点"更新"拉取并装依赖，打包后的 exe 只提供发布页链接（运行中的 exe 无法替换自身）。设置页显示当前版本；`AGENTS_MCP_NO_UPDATE_CHECK=1` 可完全关掉检查。
 - **Codex 接入**：`npm run connect:codex` 把本服务写进 `~/.codex/config.toml` 的 `[mcp_servers.agents-mcp]`，Codex 会话里直接出现 `agents_list`、`agents_flow_run` 等工具。`--approve` 可选地关掉每次调用的批准提示。
 - **Claude Code 接入**：`npm run connect:claude` 以 user 作用域注册（`--scope project|local` 可改），注册后 `claude mcp list` 的健康检查显示已连接。
 - **一个入口**：`scripts/connect.mjs <codex|claude|dsh>` 统一三家接入，都支持 `--list`、`--remove`、`--exe PATH`；三者共用同一个状态目录，面板与各 Agent 看到同一批运行记录。

@@ -14,6 +14,7 @@
   </header>
   <main>
     <section id="gate" class="gate" aria-label="任务授权" aria-live="polite" hidden></section>
+    <section id="update" class="update" aria-live="polite" hidden></section>
     <nav class="tabs" aria-label="控制台页面">
       <button data-tab="agents" aria-current="page">Agents</button>
       <button data-tab="flow">模式 A · 编排</button>
@@ -55,13 +56,14 @@
       <div class="run-layout"><div id="run-list" class="box"></div><div id="run-detail" class="box"><p>选择一条运行记录。</p></div></div>
     </section>
     <section id="settings" class="page" hidden>
-      <div class="page-heading"><h2>服务设置</h2><button id="save-settings" class="primary">保存设置</button></div>
+      <div class="page-heading"><h2>服务设置</h2><div class="actions"><button id="check-update">检查更新</button><button id="save-settings" class="primary">保存设置</button></div></div>
       <div class="box fields settings-fields">
         <label>任务授权<select id="policy"><option value="ask-once">每个任务询问一次</option><option value="auto-enable">自动启用</option><option value="deny">拒绝所有任务</option></select></label>
         <label class="check"><input id="enable-a" type="checkbox">启用模式 A</label>
         <label class="check"><input id="enable-b" type="checkbox">启用模式 B</label>
         <label class="check"><input id="draft-gate" type="checkbox">生成职责也需要授权</label>
         <label>服务端口<input id="port" type="number" min="0" max="65535"><small>重启后生效</small></label>
+        <label>版本<input id="version" readonly></label>
         <label>默认步骤超时（分钟）<input id="step-timeout" type="number" min="1" max="1440"></label>
         <label>默认并发<input id="parallel" type="number" min="1" max="32"></label>
         <label class="wide">状态目录<input id="state-dir" readonly><small>通过启动参数 --state-dir 更改</small></label>
