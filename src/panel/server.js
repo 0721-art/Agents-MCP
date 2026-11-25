@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { problem } from '../config.js';
 import { readPanelFile } from '../assets.js';
+import { pickFolder } from './folder.js';
 import { errorInfo } from '../mcp/protocol.js';
 import { mcpHttp } from '../mcp/transport-http.js';
 
@@ -76,6 +77,11 @@ export async function createHttp(service, { port = service.getConfig().port } = 
         'POST /api/flow/run': async () => service.runFlow(await value()),
         'POST /api/delegate': async () => service.delegate(await value()),
         'POST /api/draft-role': async () => service.draftRole(await value()),
+        'POST /api/pick-folder': async () => {
+          const body = await value();
+          const initial = typeof body.initial === 'string' && body.initial.trim() ? body.initial.trim() : undefined;
+          return pickFolder({ initial });
+        },
         'GET /api/runs': service.listRuns,
       };
       const route = method + ' ' + path;

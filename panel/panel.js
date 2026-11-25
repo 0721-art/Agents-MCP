@@ -303,6 +303,18 @@ wire('save-strengths', async () => {
   config.strengths = await api('/strengths', 'PUT', strengths);
   message('Agent 专长已保存。');
 });
+const pickInto = inputId => async () => {
+  const node = $(inputId);
+  const result = await api('/pick-folder', 'POST', { initial: node.value.trim() || undefined });
+  if (result.cancelled) {
+    message('未选择工作目录。');
+    return;
+  }
+  node.value = result.path;
+  message('工作目录：' + result.path);
+};
+wire('flow-cwd-pick', pickInto('flow-cwd'));
+wire('delegate-cwd-pick', pickInto('delegate-cwd'));
 wire('start-delegate', () => launchRun('/delegate', {
   ...taskFields('delegate'), ...mainActor, ...capValues, writes: $('delegate-writes').checked,
 }));

@@ -8,7 +8,7 @@
 | `src/app.js`、`src/launcher.js` | 双击入口：定位空闲端口、复用已运行实例、用默认浏览器打开面板。 |
 | `src/assets.js` | 读取面板静态文件：开发目录直接读盘，单文件 exe 从内嵌资源读取。 |
 | `src/mcp/` | JSON-RPC 2.0、工具声明、逐行 stdio 与 Streamable HTTP。 |
-| `src/panel/server.js`、`panel/` | 回环监听、静态页面和同源 JSON API。 |
+| `src/panel/server.js`、`src/panel/folder.js`、`panel/` | 回环监听、静态页面、同源 JSON API，以及用系统文件夹对话框选择工作目录。 |
 | `src/registry/` | 定位 CLI、并行探测目录、缓存结果并返回可操作的健康提示。 |
 | `src/runner/` | 安全启动进程、解析行事件、限制输出缓冲，处理超时和取消。 |
 | `src/engine/` | 持久化授权、依赖图与评审循环、委派循环、原子状态写入。 |
@@ -62,6 +62,10 @@ stdio 每行一个 JSON-RPC 消息，日志写入 stderr。HTTP 支持 `POST /mc
 `scripts/build-exe.mjs` 用 esbuild 把 `src/app.js` 及其依赖打成一个 CommonJS 文件，再用 Node 的 `--build-sea` 生成 `dist/Agents-MCP.exe`。SEA 不解析相对模块，所以必须打包；面板的 `index.html`、`panel.js`、`panel.css` 作为 SEA assets 内嵌，运行时由 `src/assets.js` 经 `node:sea` 读取，因此 exe 不依赖仓库目录。打包版不包含 fixtures 与测试，`AGENTS_MCP_FIXTURES` 只对源码运行有效。esbuild 仅是开发依赖，运行时仍然只用 Node 标准库。
 
 启动器不写入 Agent 配置，只使用状态目录。端口按配置起点依次尝试 10 个，全部占用时报 `E_PORT`；检测到本服务已在某端口运行时直接打开该页面并退出，实现单实例。失败原因同时写入标准错误和状态目录下的 `launcher.log`。
+
+单文件 exe 里 `process.execPath` 指向 `Agents-MCP.exe`，而 npm 安装的 Agent 通过 `%APPDATA%\npm\*.cmd` 这类 shim 再执行 node。`src/runner/exec.js` 的 `nodeRuntime()` 因此在 SEA 场景改用 `npm_node_execpath` 或 PATH 上的 `node.exe`，否则 shim 会把脚本参数传给本程序并报 “Unknown option”。
+
+工作目录的「浏览…」按钮调用 `POST /api/pick-folder`，服务端用 Windows PowerShell 5.1 的 `-STA` 模式打开 `FolderBrowserDialog`，选中的路径经临时 UTF-8 文件回传（重定向的控制台会丢失非 ASCII 路径）。该接口只在本机同源下可用。
 
 ## 状态目录
 

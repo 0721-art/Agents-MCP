@@ -2,6 +2,7 @@
 // The bundle embeds panel/index.html, panel.js and panel.css, so the executable runs without the
 // repository and without a separate Node.js install.
 import { execFileSync } from 'node:child_process';
+import { closeSync, openSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,15 @@ const config = join(work, 'sea-config.json');
 await rm(work, { recursive: true, force: true });
 await mkdir(work, { recursive: true });
 await mkdir(dirname(output), { recursive: true });
+// Windows locks a running executable, so fail before spending the build on a target that cannot be written.
+try {
+  closeSync(openSync(output, 'r+'));
+} catch (error) {
+  if (['EBUSY', 'EPERM', 'EACCES'].includes(error.code)) {
+    throw new Error('Close the running Agents-MCP.exe first; Windows locks the file while it runs.');
+  }
+  if (error.code !== 'ENOENT') throw error;
+}
 
 await build({
   entryPoints: [join(root, 'src', 'app.js')],
@@ -41,7 +51,14 @@ await writeFile(config, JSON.stringify({
   },
 }, null, 2) + '\n');
 
-execFileSync(process.execPath, ['--build-sea=' + config], { cwd: root, stdio: 'inherit' });
+try {
+  execFileSync(process.execPath, ['--build-sea=' + config], { cwd: root, stdio: 'inherit' });
+} catch (error) {
+  if (/resource busy or locked/i.test(String(error?.stderr ?? '') + String(error?.message ?? ''))) {
+    throw new Error('Close the running Agents-MCP.exe first; Windows locks the file while it runs.');
+  }
+  throw error;
+}
 const check = execFileSync(output, ['--check'], { encoding: 'utf8' });
 process.stdout.write(check);
 process.stdout.write('Built ' + output + '\n');

@@ -30,7 +30,7 @@
       <div class="page-heading"><h2>流程编排</h2><div class="actions"><button id="validate">验证流程</button><button id="start-flow" class="primary">启动流程</button></div></div>
       <div class="box fields task-fields">
         <label>任务<textarea id="flow-task" rows="3" placeholder="希望这个流程完成什么？"></textarea></label>
-        <label>工作目录<input id="flow-cwd" placeholder="默认使用服务启动目录"></label>
+        <label>工作目录<div class="picker"><input id="flow-cwd" placeholder="默认使用服务启动目录"><button id="flow-cwd-pick" type="button">浏览…</button></div></label>
       </div>
       <div class="box"><div class="subheading"><h3>参与者</h3><button id="add-person">添加参与者</button></div><div id="people"></div></div>
       <div class="box"><div class="subheading"><h3>步骤</h3><button id="add-step">添加步骤</button></div><div id="steps"></div></div>
@@ -40,7 +40,7 @@
       <div class="page-heading"><h2>主 Agent 委派</h2><button id="start-delegate" class="primary">启动委派</button></div>
       <div class="box fields task-fields">
         <label>任务<textarea id="delegate-task" rows="3" placeholder="交给主 Agent 的任务"></textarea></label>
-        <label>工作目录<input id="delegate-cwd" placeholder="默认使用服务启动目录"></label>
+        <label>工作目录<div class="picker"><input id="delegate-cwd" placeholder="默认使用服务启动目录"><button id="delegate-cwd-pick" type="button">浏览…</button></div></label>
       </div>
       <div class="box"><h3>主 Agent</h3><div id="main-actor"></div><label class="check"><input id="delegate-writes" type="checkbox">允许参与委派的 Agent 请求写入</label></div>
       <div class="box"><h3>委派上限</h3><div class="fields caps" id="caps"></div></div>
