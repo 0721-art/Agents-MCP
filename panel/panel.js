@@ -15,6 +15,8 @@ const steps = [];
 const loops = [];
 const mainActor = {};
 const afterGate = new Map();
+// Details toggles survive the one-second refresh, otherwise opening a step collapses immediately.
+const thinkingOpen = new Map();
 
 function el(tag, content, className) {
   const node = document.createElement(tag);
@@ -390,8 +392,8 @@ async function loadRun(id) {
   run.artifacts.forEach(name => link(name, 'artifacts/' + encodeURIComponent(name)));
   if (run.reportPath) link('查看报告', 'report.md');
   const log = el('pre', run.events.map(event =>
-    [event.step, event.type, event.text || (event.data && JSON.stringify(event.data))].filter(Boolean).join(' · ')).join('\n') || '等待事件…');
-  const oldLog = $('run-detail').querySelector('pre');
+    [event.step, event.type, event.text || (event.data && JSON.stringify(event.data))].filter(Boolean).join(' · ')).join('\n') || '等待事件…', 'event-log');
+  const oldLog = $('run-detail').querySelector('pre.event-log');
   const scroll = oldLog && oldLog.scrollTop + oldLog.clientHeight < oldLog.scrollHeight - 24 ? oldLog.scrollTop : null;
   const children = [heading, el('p', '工作目录 · ' + run.cwd, 'path'), table];
   // Each step keeps its own reasoning, because the panel shows who thought what and when.
@@ -399,7 +401,7 @@ async function loadRun(id) {
   for (const event of run.events) {
     if (event.type !== 'reasoning' || typeof event.text !== 'string' || !event.text) continue;
     const entry = reasoning.get(event.step) ?? { text: '' };
-    entry.text += (entry.text ? '\n\n' : '') + event.text;
+    entry.text += (entry.text && !event.delta ? '\n\n' : '') + event.text;
     reasoning.set(event.step, entry);
   }
   const thinkingList = el('div', undefined, 'thinking-list');
@@ -409,9 +411,12 @@ async function loadRun(id) {
     const details = el('details', undefined, 'thinking');
     details.append(el('summary', [step, status.agent, status.model,
       tokens === undefined ? undefined : '思考 ' + tokens + ' tokens'].filter(Boolean).join(' · ')));
-    details.open = notes ? status.status === 'running' : false;
+    const key = id + ':' + step;
+    details.open = thinkingOpen.has(key) ? thinkingOpen.get(key) : Boolean(notes) && status.status === 'running';
+    // The click is recorded instead of the toggle event, which also fires for programmatic opens.
+    details.querySelector('summary').addEventListener('click', () => thinkingOpen.set(key, !details.open));
     details.append(notes ? el('pre', notes.text, 'thinking-text')
-      : el('p', '该 Agent 没有输出思考正文，只记录了 token 用量。', 'hint'));
+      : el('p', tokens === undefined ? '暂无思考内容。' : '该 Agent 没有输出思考正文，只记录了 token 用量。', 'hint'));
     thinkingList.append(details);
   }
   children.push(el('h3', '思考过程'), thinkingList.childElementCount ? thinkingList : el('p', '暂无思考记录。'));

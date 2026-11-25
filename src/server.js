@@ -101,6 +101,8 @@ export async function createService({ stateDir, env = process.env, cwd = process
         return path;
       },
       async invoke(step, actor, prompt, { schema, sessionId } = {}) {
+        // A review loop re-runs a step, and the new round starts with fresh reasoning.
+        thinking.delete(step);
         const stepState = Object.hasOwn(state.steps, step) ? state.steps[step] : { round: 1 };
         Object.defineProperty(state.steps, step, { value: stepState, enumerable: true, writable: true, configurable: true });
         Object.assign(stepState, { status: 'running', startedAt: new Date().toISOString(), agent: actor.agent,
@@ -141,7 +143,9 @@ export async function createService({ stateDir, env = process.env, cwd = process
               if (event.type === 'reasoning' && typeof event.text === 'string' && event.text) {
                 const notes = thinking.get(step) ?? { text: '' };
                 const room = 64 * 1024 - notes.text.length;
-                if (room > 0) notes.text += (notes.text ? '\n\n' : '') + event.text.slice(0, room);
+                // Delta chunks continue the same paragraph, whole thoughts start a new one.
+                const separator = notes.text && !event.delta ? '\n\n' : '';
+                if (room > 0) notes.text += (separator + event.text).slice(0, room);
                 thinking.set(step, notes);
               }
               sessionId = adapter.parseSessionId?.(event) || sessionId;

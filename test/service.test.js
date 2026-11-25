@@ -124,6 +124,27 @@ test('a run keeps each agent reasoning beside its answer', async t => {
   assert.match(transcript, /# Thinking\n\nFixture reasons about the task\.\n\n# Answer/);
 });
 
+test('a review loop starts the re-run step with fresh reasoning', async t => {
+  const { dir, service } = await setup(t);
+  const loop = {
+    task: 'loop thinking',
+    participants: [{ id: 'author', ...actor, writes: true }, { id: 'reviewer', ...actor }],
+    steps: [
+      { id: 'write', participant: 'author', task: 'thinking-demo' },
+      { id: 'review', participant: 'reviewer', task: 'changes-then-pass', dependsOn: ['write'] },
+    ],
+    loops: [{ from: 'review', to: 'write', until: 'PASS', maxRounds: 2 }],
+  };
+  const pending = await service.runFlow(loop);
+  await service.gate({ taskId: pending.taskId, decision: 'enable' });
+  const { runId } = await service.runFlow(loop);
+  const result = await finish(service, runId);
+  assert.equal(result.steps.write.round, 2);
+  const transcript = await readFile(join(dir, 'runs', runId, 'steps', 'write.md'), 'utf8');
+  assert.equal(transcript.match(/# Thinking/g).length, 1, 'the second round replaces the first round thinking');
+  assert.equal(transcript.match(/Fixture reasons about the task\./g).length, 1, 'cap should not accumulate rounds');
+});
+
 test('gate preserves the task ID in responses and across restarts', async t => {
   const taskId = 'fixture-gate-id-823';
   const env = { FIXTURE_TOKEN: taskId };

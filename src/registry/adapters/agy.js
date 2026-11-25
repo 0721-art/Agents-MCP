@@ -42,7 +42,7 @@ export function parseStream(line) {
     const attached = usage && Object.keys(usage).length ? { usage } : {};
     const thought = update.text_delta ?? update.text;
     if ((update.step_type === 'thought' || update.step_type === 'thinking') && typeof thought === 'string') {
-      return { type: 'reasoning', text: thought, sessionId, ...attached };
+      return { type: 'reasoning', text: thought, sessionId, ...(update.text_delta ? { delta: true } : {}), ...attached };
     }
     if (update.step_type === 'agent_response' && typeof update.text_delta === 'string' && update.text_delta) {
       // The closing DONE chunk carries the last answer fragment together with the usage counts.

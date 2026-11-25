@@ -63,6 +63,9 @@ test('reasoning text and thinking tokens survive every stream shape in use', () 
   { type: 'reasoning', text: 'Hidden reasoning.', sessionId: undefined });
   assert.equal(jsonEvent(JSON.stringify({ type: 'reasoning_delta', delta: 'Partial thought' })).text, 'Partial thought');
   assert.equal(jsonEvent(JSON.stringify({ type: 'message', reasoning_content: 'Direct field' })).text, 'Direct field');
+  assert.equal(jsonEvent(JSON.stringify({ type: 'message', reasoning_content: 'thinking', content: 'The answer' })).type, 'assistant',
+    'an event carrying both keeps its answer text');
+  assert.equal(jsonEvent(JSON.stringify({ type: 'reasoning_delta', delta: 'chunk' })).delta, true);
   assert.deepEqual(jsonEvent(JSON.stringify({ type: 'turn.completed',
     usage: { output_tokens: 5, reasoning_output_tokens: 42 } })).usage, { outputTokens: 5, reasoningTokens: 42 });
   assert.equal(jsonEvent(JSON.stringify({ type: 'thread.started', thread_id: 't1' })).usage, undefined);
