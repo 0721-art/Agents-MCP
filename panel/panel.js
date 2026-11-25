@@ -222,6 +222,7 @@ function renderAgents() {
 async function loadAgents(refresh = false) {
   [agents, config] = await Promise.all([api('/agents' + (refresh ? '?refresh=1' : '')), api('/config')]);
   renderAgents();
+  renderDraftActor();
   renderPeople();
   $('main-actor').replaceChildren(actorPicker(mainActor));
   renderStrengths();
@@ -234,11 +235,44 @@ function remove(rows, entry, render) {
 function row(label, action, ...children) {
   return group('editor-row', ...children, group('actions', button(label, action)));
 }
+const draftActor = { agent: '', model: '', effort: '' };
+function renderDraftActor() {
+  const wrapper = $('draft-actor');
+  const options = [['', '跟随参与者自己的 Agent'], ...agents.filter(agent => agent.available).map(agent => [agent.id, agent.name])];
+  const fields = [field('职责代笔', select(options, draftActor.agent, value => {
+    draftActor.agent = value;
+    draftActor.model = '';
+    draftActor.effort = '';
+    renderDraftActor();
+  }))];
+  const agent = agents.find(entry => entry.id === draftActor.agent);
+  if (agent) {
+    const model = agent.models.find(entry => entry.id === draftActor.model) ?? agent.models[0];
+    draftActor.model = model?.id ?? '';
+    if (!model?.efforts.includes(draftActor.effort)) draftActor.effort = model?.defaultEffort ?? '';
+    fields.push(field('模型', select(agent.models.map(entry => [entry.id, entry.label]), draftActor.model, value => {
+      draftActor.model = value;
+      draftActor.effort = '';
+      renderDraftActor();
+    })), field('思考强度', select((model?.efforts ?? []).map(value => [value, value]), draftActor.effort, value => { draftActor.effort = value; })));
+  }
+  wrapper.replaceChildren(...fields);
+}
+function draftPerson(person) {
+  return draftActor.agent
+    ? { agent: draftActor.agent, model: draftActor.model, effort: draftActor.effort }
+    : { agent: person.agent, model: person.model, effort: person.effort };
+}
 function renderPeople() {
   $('people').replaceChildren(...people.map(person => {
     const responsibilities = input(person.responsibility, text => { person.responsibility = text; }, { rows: 3 });
     const draft = button('帮我写职责', async () => {
-      const args = { ...person, brief: person.responsibility || person.role, ...draftContext() };
+      const writer = draftPerson(person);
+      if (!writer.agent || !writer.model) {
+        message('先给参与者选好 Agent，或在「职责代笔」里指定。');
+        return;
+      }
+      const args = { ...person, ...writer, brief: person.responsibility || person.role, ...draftContext() };
       const launch = async () => {
         const started = await api('/draft-role', 'POST', args);
         if (await waitForGate(started, launch)) return;
