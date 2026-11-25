@@ -1,10 +1,19 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { problem } from '../config.js';
 
 const limit = 256 * 1024;
+
+// npm shims re-exec node by name. Inside the packaged single-file executable process.execPath is
+// Agents-MCP.exe, which rejects the shim's script argument, so shims get a real node instead.
+export function nodeRuntime(env = process.env, execPath = process.execPath) {
+  if (/^node(?:\.exe)?$/i.test(basename(execPath))) return execPath;
+  const path = env.PATH ?? env.Path ?? '';
+  const candidates = [env.npm_node_execpath, ...path.split(delimiter).filter(Boolean).map(dir => join(dir, 'node.exe'))];
+  return candidates.find(candidate => typeof candidate === 'string' && candidate !== '' && existsSync(candidate)) ?? 'node.exe';
+}
 
 export function command(exe, args, env) {
   if (process.platform !== 'win32' || !/\.(cmd|bat)$/i.test(exe)) return { exe, args };
@@ -20,7 +29,7 @@ export function command(exe, args, env) {
     const local = join(dirname(exe), runtime + '.exe');
     const npmBun = env.APPDATA && join(env.APPDATA, 'npm', 'node_modules', 'bun', 'bin', 'bun.exe');
     return {
-      exe: existsSync(local) ? local : runtime === 'node' ? process.execPath
+      exe: existsSync(local) ? local : runtime === 'node' ? nodeRuntime(env)
         : npmBun && existsSync(npmBun) ? npmBun : 'bun.exe',
       args: [join(dirname(exe), (npm || simple)[1]), ...args],
     };

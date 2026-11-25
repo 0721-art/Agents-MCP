@@ -9,7 +9,7 @@ import { PassThrough } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { run } from '../src/runner/exec.js';
+import { run, nodeRuntime } from '../src/runner/exec.js';
 
 const fixture = suffix => fileURLToPath(new URL('../fixtures/fake-agent.' + suffix, import.meta.url));
 
@@ -114,4 +114,16 @@ test('Windows cancellation resolves when an exited launcher leaves pipes open', 
     deadline.abort();
     launcher.emit('close', 0);
   }
+});
+
+test('shim unwrapping resolves a real node instead of the packaged executable', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'agents-mcp-node-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const packaged = join(dir, 'Agents-MCP.exe');
+  // Inside the single-file executable process.execPath is Agents-MCP.exe, which cannot run a JS file.
+  assert.equal(nodeRuntime({}, packaged), 'node.exe');
+  assert.equal(nodeRuntime({ npm_node_execpath: process.execPath, PATH: '' }, packaged), process.execPath);
+  const beside = join(dir, 'node.exe');
+  await writeFile(beside, '');
+  assert.equal(nodeRuntime({ PATH: [join(dir, 'missing'), dir].join(process.platform === 'win32' ? ';' : ':') }, packaged), beside);
 });
