@@ -132,7 +132,7 @@ test('DSH offers the models the user configured and hands headless their key', a
     '        displayName: new',
     '        apiKeyEnv: NEW_API_KEY',
     '        api: openai-completions',
-    '        baseURL: http://127.0.0.1:7863/v1',
+    '        baseURL: http://127.0.0.1:9999/v1',
     '        models:',
     '          - id: cn:deepseek-v4.1-flash',
     '            name: Deepseek-V4.1-Flash',
@@ -181,7 +181,7 @@ test('DSH offers the models the user configured and hands headless their key', a
   t.after(() => options.cleanup());
   const patch = await readFile(options.args[options.args.indexOf('--patch') + 1], 'utf8');
   assert.match(patch, /^      new:$/m);
-  assert.match(patch, /baseURL: http:\/\/127\.0\.0\.1:7863\/v1/);
+  assert.match(patch, /baseURL: http:\/\/127\.0\.0\.1:9999\/v1/);
   assert.doesNotMatch(patch, /many:/);
   assert.match(patch, /provider: new/);
   assert.match(patch, /model: "cn:deepseek-v4.1-flash"/);

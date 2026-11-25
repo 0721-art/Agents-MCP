@@ -2,6 +2,12 @@
 
 Agents-MCP 是一个本地 MCP 服务，带有网页控制台。它读取已安装 Agent CLI 的模型配置，按任务调度子进程，并保存运行记录和报告。需要 Node.js 22 或更新版本。运行时只使用 Node 标准库。
 
+## 系统要求
+
+- **Windows 10/11**：文件夹选择器走 PowerShell + WinForms，单文件 exe 走 Node SEA，均为 Windows 实现；macOS / Linux 未测试。
+- **Node.js 22 或更新版本**：运行只需要标准库；只有构建 exe 时额外安装 esbuild（开发依赖）。
+- **Agent CLI 按需准备**：Codex、Antigravity（`agy`）、DeepSeek Harness（`dsh`）、Pi、OMP 各自安装并登录；缺哪个就在面板里显示不可用，不影响其他 Agent。Grok 与 Claude 的适配器未做真实鉴权校验。
+- **首次从源码使用**：`npm i`（只为构建 exe 安装 esbuild），然后 `npm test` 自检、`npm run build:exe` 生成可双击的程序。`dist/` 不进仓库。
 ## 启动
 
 ```powershell

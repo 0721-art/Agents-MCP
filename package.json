@@ -39,5 +39,9 @@
   ],
   "devDependencies": {
     "esbuild": "^0.28.2"
+  },
+  "homepage": "https://github.com/0721-art/Agents-MCP#readme",
+  "bugs": {
+    "url": "https://github.com/0721-art/Agents-MCP/issues"
   }
 }
