@@ -75,6 +75,19 @@ test('the update route restarts the service only after answering', async t => {
   assert.equal(restarted, 1, 'the restart hook runs after the response is finished');
 });
 
+test('the panel can ask what this machine can actually do', async t => {
+  const { dir, service } = await setup(t);
+  const report = await service.health();
+  assert.equal(report.state.dir, dir);
+  assert.equal(typeof report.state.writable, 'boolean');
+  assert.ok(Array.isArray(report.locations));
+  assert.equal(typeof report.update.source, 'string');
+  assert.equal(report.version, (await service.getConfig()).version);
+  // Redaction runs over every payload the panel receives; folder kinds must survive it.
+  const redacted = service.redact(report);
+  assert.deepEqual(redacted.locations.map(location => location.kind), ['desktop', 'programs']);
+});
+
 test('gate requires a run request before accepting a decision', async t => {
   const { service } = await setup(t);
   await assert.rejects(service.gate({ task: flow.task, decision: 'enable' }), /run the task first/i);

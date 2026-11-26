@@ -82,3 +82,9 @@ a { color: #244caf; }
 button.danger { border-color: #c98f8f; color: #a33; }
 button.danger:hover { background: #fdeeee; }
 @media (max-width: 680px) { main { padding: 14px; } .task-fields, .run-layout { grid-template-columns: 1fr; } }
+
+.health { display: grid; gap: 6px; margin-bottom: 12px; }
+.health-row { display: flex; gap: 12px; font-size: .86rem; }
+.health-label { flex: 0 0 7.5rem; color: var(--muted); }
+.health-value { flex: 1 1 auto; word-break: break-all; }
+.health-value.bad, .hint.bad { color: #b23b3b; }

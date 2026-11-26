@@ -408,6 +408,38 @@ wire('validate', async () => {
 });
 wire('start-flow', () => launchRun('/flow/run', structuredClone(flow())));
 
+// The problem report's loudest complaint was silence: failures without a reason. The panel
+// now states where state lives, which folders it can write, and whether the update route
+// can reach anything at all.
+async function loadHealth() {
+  const report = $('health');
+  report.replaceChildren(el('p', '检测中…', 'hint'));
+  let data;
+  try {
+    data = await api('/health');
+  } catch (error) {
+    report.replaceChildren(el('p', error.message, 'hint bad'));
+    return;
+  }
+  const row = (label, value, ok) => {
+    const line = el('div', '', 'health-row');
+    line.append(el('span', label, 'health-label'), el('span', value, ok === false ? 'health-value bad' : 'health-value'));
+    return line;
+  };
+  const rows = [
+    row('状态目录', data.state.dir + (data.state.writable ? '（可写）' : '（不可写：' + data.state.reason + '）'), data.state.writable),
+  ];
+  for (const location of data.locations) {
+    rows.push(row(location.kind === 'desktop' ? '桌面目录' : '开始菜单目录',
+      location.dir + (location.writable ? '（可写）' : '（不可写：' + location.reason + '）'), location.writable));
+  }
+  rows.push(row('更新通道', data.update.proxy
+    ? '代理 ' + data.update.proxy + '（来源 ' + data.update.source + '，' + (data.update.reachable ? '可连接' : '连不上') + '）'
+    : '直连', data.update.proxy ? data.update.reachable : null));
+  rows.push(row('运行环境', data.platform + ' · ' + data.node + ' · v' + data.version));
+  report.replaceChildren(...rows);
+}
+
 const capValues = {};
 function renderSettings() {
   $('policy').value = config.gate.policy;
@@ -598,9 +630,10 @@ async function loadRun(id) {
 }
 wire('refresh-runs', loadRuns);
 
-loadAgents().then(renderSettings).catch(error => message(error.message, true));
+loadAgents().then(renderSettings).then(loadHealth).catch(error => message(error.message, true));
 loadPresets().catch(error => message(error.message, true));
 loadUpdate().catch(() => {});
+wire('check-health', () => loadHealth());
 wire('check-update', async () => {
   updateDismissed = false;
   await loadUpdate(true);

@@ -30,8 +30,17 @@ export function parseProxy(value) {
 }
 
 export function resolveProxy({ env = process.env, config } = {}) {
-  const candidate = config?.proxy || env.AGENTS_MCP_PROXY || env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy;
-  return parseProxy(candidate);
+  return proxySource({ env, config }).proxy;
+}
+
+// Where the address came from matters when a check fails: "config" is the panel field,
+// the rest are environment variables people forget they exported.
+export function proxySource({ env = {}, config = {} } = {}) {
+  if (config?.proxy) return { value: config.proxy, source: 'config', proxy: parseProxy(config.proxy) };
+  for (const key of ['AGENTS_MCP_PROXY', 'HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']) {
+    if (env[key]) return { value: env[key], source: key, proxy: parseProxy(env[key]) };
+  }
+  return { value: '', source: 'direct', proxy: null };
 }
 
 function tunnel(proxy, host, port, timeoutMs) {

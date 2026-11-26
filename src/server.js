@@ -4,6 +4,7 @@ import { configWith, defaults, identifier, object, problem } from './config.js';
 import { delegationCaps, executeDispatch } from './engine/dispatch.js';
 import { executeFlow, validateFlow } from './engine/flow.js';
 import { createGate } from './engine/gate.js';
+import { environmentReport } from './diagnose.js';
 import { createStore, resolveStateDirectory } from './engine/store.js';
 import { createRegistry } from './registry/index.js';
 import { deletePreset, readPresets, savePreset } from './presets.js';
@@ -246,6 +247,7 @@ export async function createService({ stateDir, env = process.env, cwd = process
     savePreset: input => savePreset(store, input),
     deletePreset: id => deletePreset(store, id), getConfig: () => ({ ...config, stateDir: store.dir, stateFallback: resolved.fallback, version: version }),
     // The panel asks once on load and again only when the user presses 检查更新.
+    health: () => environmentReport({ env, stateDir: store.dir, proxy: config.proxy }),
     update: ({ fresh = false } = {}) => checkForUpdate({ stateDir: store.dir, env, fresh, proxy: config.proxy }),
     applyUpdate: () => upgradeCheckout({ stateDir: store.dir, env, proxy: config.proxy }),
     setConfig: patch => updateConfig(() => patch),

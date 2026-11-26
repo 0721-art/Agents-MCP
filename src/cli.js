@@ -29,6 +29,16 @@ export async function serve({ mcp = 'stdio', port, stateDir, panel = false, self
       }
       if (agent.reason) process.stdout.write('  ' + agent.reason + ' ' + (agent.remedy || '') + '\n');
     }
+    // The update route is invisible in the agent table but decides whether 立即更新 works.
+    const health = await service.health();
+    const update = health.update;
+    process.stdout.write('update · ' + (update.proxy
+      ? update.proxy + ' via ' + update.source + ' · ' + (update.reachable ? 'reachable' : 'unreachable')
+      : 'direct · no proxy configured') + '\n');
+    process.stdout.write('state · ' + health.state.dir + ' · ' + (health.state.writable ? 'writable' : 'NOT writable (' + health.state.reason + ')') + '\n');
+    for (const location of health.locations) {
+      process.stdout.write(location.kind + ' · ' + location.dir + ' · ' + (location.writable ? 'writable' : 'NOT writable (' + location.reason + ')') + '\n');
+    }
     await service.close();
     return {};
   }
