@@ -6,7 +6,7 @@ Agents-MCP 是一个本地 MCP 服务，带有网页控制台。它读取已安�
 
 | 方式 | 适合 | 怎么做 |
 | --- | --- | --- |
-| **下载即用** | 只想用，不装 Node、不看代码 | 从 [releases](https://github.com/0721-art/Agents-MCP/releases/latest) 下载 `Agents-MCP-win-x64.zip`，解压后双击 `Agents-MCP.exe`。面板以独立桌面窗口打开，**没有控制台窗口** |
+| **下载即用** | 只想用，不装 Node、不看代码 | 从 [releases](https://github.com/0721-art/Agents-MCP/releases/latest) 下载 `Agents-MCP-win-x64.zip`，解压后双击 `Agents-MCP.exe`。双击 `Agents-MCP.Panel.exe` 打开普通应用窗口，**没有控制台窗口** |
 | **自己构建** | 想改代码 | `npm i` → `npm run build:exe` → 双击 `dist/Agents-MCP.exe`；或 `npm run pack:zip` 生成可分发的压缩包 |
 | **命令行 / MCP 主机** | 接入 Codex、Claude Code、DSH | `npm run connect:codex` / `connect:claude` / `connect:dsh`，或手动 `node bin/agents-mcp.js --mcp=stdio` |
 
@@ -89,21 +89,24 @@ Agent 启动或探测失败时，面板显示原因和处置提示。Agent 的�
 ## 双击启动（单文件 exe）
 
 ```powershell
-npm run build:exe        # 输出 dist/Agents-MCP.exe
+npm run build:exe          # 输出 dist/Agents-MCP.exe（服务本体）
+npm run build:desktop     # 输出 dist/desktop/：Agents-MCP.Panel.exe + Agents-MCP.exe
 ```
 
-双击 `Agents-MCP.exe` 会在本机启动服务，并把面板 `http://127.0.0.1:4870/` 作为独立的桌面窗口打开（没有标签栏和地址栏），配置、授权和运行记录都在这个窗口里调整。exe 内嵌 Node 运行时和面板资源，可以复制到任意目录单独使用，不需要安装 Node.js，也不需要仓库文件。
+双击 **`Agents-MCP.Panel.exe`** 会打开一个普通应用窗口（自己的图标和标题栏，不是浏览器），窗口里就是面板 `http://127.0.0.1:4870/`，配置、授权和运行记录都在这里调整。这个窗口程序会自动启动同目录的 `Agents-MCP.exe` 服务，**关掉窗口就停止服务**。两个 exe 都内嵌运行时，整个 `desktop` 文件夹可以复制到任意位置单独使用，不需要 Node.js、.NET 或仓库文件。
 
-- 这是 GUI 子系统的可执行文件：双击不会弹控制台窗口，双击后只看到面板窗口。
-- 面板窗口借助本机的 Edge 或 Chrome 渲染（`--app` 模式，1360×900，独立配置目录 `<状态目录>/window-profile`）；两者都没有时退回默认浏览器。想用普通标签页：`Agents-MCP.exe --browser`。
-- 关掉面板窗口不会停止服务，再双击一次会重新打开窗口；停止服务用「设置」页的「关闭服务」或 `--stop`。
+窗口用系统自带的 WebView2（Win10/11 都有）渲染；极少数精简系统缺它时，窗口会提示，到微软官网装「WebView2 常青版运行时」即可。
+
+- 窗口程序（WinForms + WebView2）没有控制台窗口；菜单栏有「重新载入 / 开发者工具 / 在浏览器中打开」和「停止服务并退出」。`Agents-MCP.Panel.exe --browser` 则退回用默认浏览器打开。
+- 只有服务 exe（没有窗口程序）时，双击 `Agents-MCP.exe` 仍可用：它用 Edge/Chrome 的 `--app` 模式开一个独立窗口；关掉那个窗口不停止服务，停止用「设置」页的「关闭服务」或 `--stop`。
 - 停止服务：面板「设置」页 →「关闭服务」，或 `Agents-MCP.exe --stop`。
-- 快捷方式：面板「设置」页 →「创建快捷方式」（可勾选开机自启），等价于 `Agents-MCP.exe --install [--startup]`；删除用「删除快捷方式」或 `--uninstall`。
+- 快捷方式：面板「设置」页 →「创建快捷方式」（可勾选开机自启），等价于 `Agents-MCP.exe --install [--startup]`，有窗口程序时快捷方式指向它；删除用「删除快捷方式」或 `--uninstall`。
 - 再次双击不会重复启动：检测到本服务已在运行，只打开已有页面。
 - 端口被其他程序占用时，依次向后尝试 10 个端口，全部失败才报错。
 - 启动失败的原因同时写入 `%APPDATA%\Agents-MCP\launcher.log`（没有控制台，这是唯一能看到错误的地方）。
 - 可选参数：`--port N`、`--state-dir DIR`、`--no-open`（只启动服务、不开窗口）、`--check`（只校验可执行文件）。
-- 打包版和源码版能力一致：`Agents-MCP.exe --mcp=stdio` 可以直接作为 MCP 主机里的命令，`Agents-MCP.exe --selftest` 打印同样的探测结果，`--mcp=http --panel` 同时开 HTTP MCP 与面板。
+- 服务本体和源码版能力一致：`Agents-MCP.exe --mcp=stdio` 可以直接作为 MCP 主机里的命令，`Agents-MCP.exe --selftest` 打印同样的探测结果，`--mcp=http --panel` 同时开 HTTP MCP 与面板。
+- 自己构建窗口程序需要一次 .NET SDK（`npm run build:desktop`）；使用者不需要，发布的 zip 里已经带着编译好的文件。
 - exe 未做代码签名，首次运行可能出现 SmartScreen 提示，选择"仍要运行"即可。
 - 打包版不含测试 fixture，`AGENTS_MCP_FIXTURES` 只对源码运行有效；Agent 仍按本机 CLI 的实际登录状态探测。
 - exe 运行时通过 npm 安装的 Agent（如 `dsh`、`pi`）会改用 PATH 上的 `node` 执行其 shim；缺少 Node.js 时这些 Agent 会显示不可用并提示安装。

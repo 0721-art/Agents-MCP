@@ -27,12 +27,14 @@ export function shortcutPlan({ env = process.env, startup = false } = {}) {
 
 const quote = value => "'" + String(value).replaceAll("'", "''") + "'";
 
-// The executable a shortcut should point at: the packaged exe when running from it, otherwise
-// the built one next to the checkout.
-export function runtimeExecutable({ execPath = process.execPath, cwd = process.cwd() } = {}) {
+// The executable a shortcut should point at: the native panel window when it sits beside the
+// running service, else the packaged exe, else the built one next to the checkout.
+export function runtimeExecutable({ execPath = process.execPath, cwd = process.cwd(), exists = existsSync } = {}) {
+  const panel = join(dirname(execPath), 'Agents-MCP.Panel.exe');
+  if (exists(panel)) return panel;
   const base = execPath.split(/[\\/]/).pop()?.toLowerCase() ?? '';
   if (base !== 'node.exe' && base !== 'node') return execPath;
-  return join(cwd, 'dist', 'Agents-MCP.exe');
+  return join(cwd, 'dist', 'desktop', exists(join(cwd, 'dist', 'desktop', 'Agents-MCP.exe')) ? 'Agents-MCP.Panel.exe' : '..\\Agents-MCP.exe');
 }
 
 // The failing folder and the reason matter more than the stack PowerShell prints: a shortcut

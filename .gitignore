@@ -35,3 +35,7 @@ coverage/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# .NET build output
+desktop/bin/
+desktop/obj/

@@ -6,6 +6,9 @@
 | --- | --- |
 | `src/server.js`、`src/config.js` | 组装服务，校验配置和工作目录，记录并管理后台运行。 |
 | `src/app.js`、`src/launcher.js` | 双击入口：定位空闲端口、复用已运行实例、用默认浏览器打开面板；`--install/--uninstall/--stop` 分别创建快捷方式、删除快捷方式和关闭正在运行的服务。 |
+| `desktop/Program.cs` | 原生面板窗口（WinForms + WebView2）：`Agents-MCP.Panel.exe` 启动同目录的 `Agents-MCP.exe --no-open`，轮询 `/api/config` 找到实际端口后把 WebView2 指过去；关窗时 POST `/api/shutdown` 再兜底结束子进程。菜单含重新载入 / 开发者工具 / 在浏览器中打开 / 停止并退出。 |
+| `scripts/build-desktop.mjs` | `npm run build:desktop`：把 csproj 版本对齐 package.json，`dotnet publish`（框架依赖，需 .NET SDK 一次）到 `dist/desktop/`，复制服务 exe，去掉 pdb/xml/Wpf，最后跑 `--check`。 |
+| `scripts/make-icon.mjs` | 不依赖图像库，直接写多尺寸 ICO（圆角底 + 三个彩色圆点）。 |
 | `src/window.js` | 面板以桌面窗口打开：按 Edge → Chrome 的顺序在三个安装根目录里找浏览器，用 `--app=<url>`、独立 `--user-data-dir`（`<状态目录>/window-profile`）和固定窗口尺寸启动，脱离父进程运行；找不到浏览器时退回 `openUrl`。 |
 | `src/shortcut.js` | 用 WScript.Shell 在桌面、开始菜单（可选启动项）写 `Agents-MCP.lnk`；路径由环境变量推导，便于测试；失败时指明是哪个文件夹不可写并给出替代做法。 |
 | `scripts/pack-zip.mjs` | 把 exe、使用说明与 LICENSE 打成 `dist/Agents-MCP-<版本>-win-x64.zip`。 |

@@ -47,7 +47,17 @@ test('installing writes the links and uninstalling removes them', { skip: proces
 });
 
 test('a shortcut never points at a bare node executable', () => {
-  assert.equal(runtimeExecutable({ execPath: 'E:\\Nodev\\node.exe', cwd: 'E:\\Agents-MCP' }),
-    join('E:\\Agents-MCP', 'dist', 'Agents-MCP.exe'));
-  assert.equal(runtimeExecutable({ execPath: 'E:\\Apps\\Agents-MCP.exe', cwd: 'E:\\Agents-MCP' }), 'E:\\Apps\\Agents-MCP.exe');
+  const exists = () => false;
+  assert.equal(runtimeExecutable({ execPath: 'E:\\Nodev\\node.exe', cwd: 'E:\\Agents-MCP', exists }),
+    join('E:\\Agents-MCP', 'dist', 'desktop', '..\\Agents-MCP.exe'));
+  assert.equal(runtimeExecutable({ execPath: 'E:\\Apps\\Agents-MCP.exe', cwd: 'E:\\Agents-MCP', exists }), 'E:\\Apps\\Agents-MCP.exe');
+});
+
+test('a shortcut points at the native panel window when it is beside the service', () => {
+  const desktop = join('E:\\Agents-MCP', 'dist', 'desktop');
+  const built = path => path === join(desktop, 'Agents-MCP.exe') || path === join(desktop, 'Agents-MCP.Panel.exe');
+  assert.equal(runtimeExecutable({ execPath: 'E:\\Nodev\\node.exe', cwd: 'E:\\Agents-MCP', exists: built }), join(desktop, 'Agents-MCP.Panel.exe'));
+  assert.equal(runtimeExecutable({ execPath: join(desktop, 'Agents-MCP.exe'), cwd: 'E:\\Agents-MCP', exists: built }), join(desktop, 'Agents-MCP.Panel.exe'));
+  // A bare service exe (older layout) stays the target itself.
+  assert.equal(runtimeExecutable({ execPath: join(desktop, 'Agents-MCP.exe'), cwd: 'E:\\', exists: () => false }), join(desktop, 'Agents-MCP.exe'));
 });
