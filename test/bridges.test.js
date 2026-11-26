@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { clientBridges, createUsage, readHistory, setBridge, usageId } from '../src/bridges.js';
+import { clientBridges, createUsage, readHistory, recentCalls, setBridge, usageId } from '../src/bridges.js';
 
 async function home() {
   const root = await mkdtemp(join(tmpdir(), 'amcp-bridges-'));
@@ -172,4 +172,36 @@ test('the dsh bundle row gains disabled: true and loses it again', async () => {
   after = await readFile(patch, 'utf8');
   assert.doesNotMatch(after, /disabled: true/);
   assert.equal((await clientBridges({ env })).find(row => row.id === 'dsh').enabled, true);
+});
+
+test('every tool call is appended so a task that left no row did not come through', async () => {
+  const { root } = await home();
+  const usage = createUsage(root);
+  await usage.note({ name: 'codex-cli' });
+  await usage.noteCall({ tool: 'agents_flow_run', ok: true, ms: 12, task: 'refactor\n  the parser' });
+  await usage.noteCall({ tool: 'agents_status', ok: false, ms: 3 });
+
+  const calls = await recentCalls(root, 10);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].tool, 'agents_status', 'newest first');
+  assert.equal(calls[0].ok, false);
+  assert.equal(calls[1].tool, 'agents_flow_run');
+  assert.equal(calls[1].client, 'codex-cli');
+  assert.equal(calls[1].task, 'refactor the parser');
+  assert.ok(calls[1].at);
+});
+
+test('a full call log is rotated instead of growing without bound', async () => {
+  const { root } = await home();
+  const appended = [];
+  const usage = createUsage(root, {
+    size: async () => ({ size: 1024 * 1024 }),
+    append: async (path, body) => { appended.push({ path, body }); },
+    writeFile: async () => {},
+  });
+  await usage.note({ name: 'claude-code' });
+  const entry = await usage.noteCall({ tool: 'agents_list', ok: true, ms: 1 });
+  assert.equal(appended.length, 1, 'the call is still written to the fresh file');
+  assert.match(appended[0].path, /calls\.ndjson$/);
+  assert.equal(JSON.parse(appended[0].body).tool, 'agents_list');
 });

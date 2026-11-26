@@ -82,6 +82,7 @@ export async function createHttp(service, { port = service.getConfig().port, onS
         'GET /api/health': () => service.health(),
         'GET /api/bridges': () => service.bridges(),
         'POST /api/bridges': async () => service.setBridge(await value()),
+        'GET /api/calls': () => service.calls({ limit: Number(url.searchParams.get('limit')) || 20 }),
         'GET /api/update': () => service.update({ fresh: url.searchParams.get('fresh') === '1' }),
         'POST /api/update/apply': async () => {
           await value();

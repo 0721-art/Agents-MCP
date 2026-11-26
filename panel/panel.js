@@ -429,6 +429,16 @@ async function loadBridges() {
     report.replaceChildren(el('p', error.message, 'hint bad'));
     return;
   }
+  let calls = [];
+  try {
+    calls = await api('/calls?limit=15');
+  } catch {
+    calls = [];
+  }
+  const clock = value => {
+    const when = new Date(value);
+    return Number.isNaN(when.getTime()) ? '' : when.toLocaleTimeString('zh-CN', { hour12: false });
+  };
   const line = row => {
     const item = el('div', '', 'health-row');
     const state = row.connectedNow ? '使用中' : row.enabled === false ? '已停用' : row.configured ? '已注册' : '未接入';
@@ -454,7 +464,18 @@ async function loadBridges() {
     }
     return item;
   };
+  const callLine = entry => {
+    const item = el('div', '', 'health-row');
+    const text = (entry.task ? entry.task : '（无任务文本）');
+    item.append(el('span', clock(entry.at), 'health-label'),
+      el('span', entry.client ?? '其他客户端', 'health-value'),
+      el('span', entry.tool + (entry.ok ? '' : ' · 失败') + ' · ' + entry.ms + 'ms', 'health-value ' + (entry.ok ? '' : 'bad')),
+      el('span', text, 'health-value'));
+    return item;
+  };
   report.replaceChildren(...rows.map(line),
+    el('h3', '最近调用', 'health-title'),
+    ...(calls.length ? calls.map(callLine) : [el('p', '没有任何调用记录——说明这段时间没有任务经过本 MCP（客户端只是登记在配置里，并没有用它）。', 'hint')]),
     el('p', '「停用」会改这个客户端自己的配置，重启该客户端后生效；「启用」会把它接回来。在 Codex 或 Claude Code 里调用任意 agents_* 工具，这一行会立刻变成「使用中」。', 'hint'));
 }
 

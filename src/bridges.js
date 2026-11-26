@@ -1,7 +1,7 @@
 // "Is it actually on?" is the question people ask in the middle of using the thing, not
 // while reading docs. These rows answer it from two sides: what each client's config says,
 // and whether that client has really connected and called a tool recently.
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { appendFile, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { problem } from './config.js';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -225,7 +225,35 @@ export async function readHistory(stateDir) {
   }
 }
 
-export function createUsage(stateDir, { writeFile } = {}) {
+const callLog = 'calls.ndjson';
+const callLogCap = 512 * 1024;
+
+// "Did it go through the MCP at all?" can only be answered from our side: every tool call is
+// appended here, so a task that leaves no row did not come through this server.
+function callEntry({ tool, ok, ms, task, client, now = new Date() }) {
+  const entry = { at: now.toISOString(), tool: String(tool ?? 'unknown'), ok: ok !== false, ms: Math.max(0, Math.round(Number(ms) || 0)) };
+  if (client) entry.client = client;
+  if (typeof task === 'string' && task.trim()) entry.task = task.replace(/\s+/g, ' ').trim().slice(0, 200);
+  return entry;
+}
+
+export async function recentCalls(stateDir, limit = 20) {
+  let body = '';
+  try {
+    body = await readFile(join(stateDir, callLog), 'utf8');
+  } catch {
+    return [];
+  }
+  return body.split('\n').filter(Boolean).slice(-Math.max(1, limit)).map(line => {
+    try {
+      return JSON.parse(line);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean).reverse();
+}
+
+export function createUsage(stateDir, { writeFile, append = appendFile, size = stat } = {}) {
   const history = {};
   let loaded;
   const persist = async () => {
@@ -249,7 +277,7 @@ export function createUsage(stateDir, { writeFile } = {}) {
       await persist();
     },
     // The last client that introduced itself owns the calls that follow it.
-    noteCall: async () => {
+    noteCall: async (call = {}) => {
       await load();
       const entry = Object.entries(history)
         .filter(([, value]) => value.lastSeen)
@@ -258,6 +286,16 @@ export function createUsage(stateDir, { writeFile } = {}) {
       const current = history[key] ?? {};
       history[key] = { ...current, lastSeen: new Date().toISOString(), calls: (current.calls ?? 0) + 1 };
       await persist();
+      try {
+        const file = join(stateDir, callLog);
+        const bytes = await size(file).then(info => info.size, () => 0);
+        if (bytes > callLogCap) await rename(file, join(stateDir, 'calls.1.ndjson')).catch(() => {});
+        const entry = callEntry({ ...call, client: current.name ?? key });
+        if (call.task !== undefined && entry.task === undefined) delete entry.task;
+        await append(file, JSON.stringify(entry) + '\n');
+      } catch {
+        // Logging must never break a tool call.
+      }
     },
     snapshot: () => history,
   };

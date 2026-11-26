@@ -4,7 +4,7 @@ import { configWith, defaults, identifier, object, problem } from './config.js';
 import { delegationCaps, executeDispatch } from './engine/dispatch.js';
 import { executeFlow, validateFlow } from './engine/flow.js';
 import { createGate } from './engine/gate.js';
-import { clientBridges, createUsage, setBridge as toggleBridge } from './bridges.js';
+import { clientBridges, createUsage, recentCalls, setBridge as toggleBridge } from './bridges.js';
 import { environmentReport } from './diagnose.js';
 import { createStore, resolveStateDirectory } from './engine/store.js';
 import { createRegistry } from './registry/index.js';
@@ -283,8 +283,9 @@ export async function createService({ stateDir, env = process.env, cwd = process
       });
       return service.bridges();
     },
+    calls: ({ limit = 20 } = {}) => recentCalls(store.dir, Math.min(Math.max(Number(limit) || 20, 1), 200)),
     noteClient: info => usage.note(info),
-    noteCall: () => usage.noteCall(),
+    noteCall: call => usage.noteCall(call),
     update: ({ fresh = false } = {}) => checkForUpdate({ stateDir: store.dir, env, fresh, proxy: config.proxy }),
     applyUpdate: () => upgradeCheckout({ stateDir: store.dir, env, proxy: config.proxy }),
     setConfig: patch => updateConfig(() => patch),

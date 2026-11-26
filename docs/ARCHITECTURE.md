@@ -10,7 +10,7 @@
 | `scripts/pack-zip.mjs` | 把 exe、使用说明与 LICENSE 打成 `dist/Agents-MCP-<版本>-win-x64.zip`。 |
 | `src/cli.js` | 源码入口与打包入口共用的启动逻辑：解析 `--panel/--mcp/--port/--state-dir/--selftest/--no-open`、打印自检表、按 stdio 或 HTTP 起服务。 |
 | `src/update.js` | 查最新 release（缓存 6 小时）、git checkout 走 `git pull --ff-only`，打包版则下载同名 exe、校验大小与 `sha256`、替换自身并重启；替换失败时保留 `.new` 待下次启动。 |
-| `src/bridges.js` | 判断每个客户端是否接入（读 Codex `config.toml`、`~/.claude.json`、DSH profile 的 bundle 列表）并记录真实使用（`initialize` 的 clientInfo 与工具调用次数写到 `bridges.json`），`GET /api/bridges` 与 `--bridges` 共用。 |
+| `src/bridges.js` | 判断每个客户端是否接入（读 Codex `config.toml`、`~/.claude.json`、DSH profile 的 bundle 列表）并记录真实使用（`initialize` 的 clientInfo 与工具调用次数写到 `bridges.json`；每次调用的工具、耗时、任务前 200 字追加到 `calls.ndjson`，512 KB 后轮转），`GET /api/bridges` 与 `--bridges` 共用。 |
 | `src/diagnose.js` | `environmentReport()` 现场探测状态目录与快捷方式目录的可写性、更新通道来源与代理端口可达性；`GET /api/health` 与 `--selftest` 共用这一份结果。 |
 | `src/proxy.js` | 更新检查与下载走 HTTP CONNECT 隧道（`http://` 代理只用于明文请求）：自己建立隧道并完成 TLS，因为 Node 的 fetch 不读系统代理设置。代理地址来自配置、`AGENTS_MCP_PROXY` 或 `HTTPS_PROXY`。 |
 | `src/assets.js` | 读取面板静态文件：开发目录直接读盘，单文件 exe 从内嵌资源读取。 |
@@ -55,7 +55,7 @@ stdio 每行一个 JSON-RPC 消息，日志写入 stderr。HTTP 支持 `POST /mc
 | `agents_cancel` | `{runId}` → 取消状态 |
 | `agents_draft_role` | `{agent, model, effort, brief, task?, taskId?, cwd?}` → `{runId}` 或授权状态。完成后从状态中读取 `answer`。 |
 
-面板通过 `/api/agents`、`/api/config`、`/api/strengths`、`/api/gate/pending`、`/api/gate`、`/api/flow/validate`、`/api/flow/run`、`/api/delegate`、`/api/runs`、`/api/draft-role`、`/api/presets`、`/api/health`, `/api/bridges` (`GET` 状态 / `POST {id, enabled}` 开关), `/api/update`、`/api/shortcuts` 和 `/api/draft-role` 操作同一服务。`POST /api/shutdown` 先回包再关闭监听与服务，`--stop` 与面板「关闭服务」都走它。
+面板通过 `/api/agents`、`/api/config`、`/api/strengths`、`/api/gate/pending`、`/api/gate`、`/api/flow/validate`、`/api/flow/run`、`/api/delegate`、`/api/runs`、`/api/draft-role`、`/api/presets`、`/api/health`, `/api/bridges` (`GET` 状态 / `POST {id, enabled}` 开关), `/api/calls`, `/api/update`、`/api/shortcuts` 和 `/api/draft-role` 操作同一服务。`POST /api/shutdown` 先回包再关闭监听与服务，`--stop` 与面板「关闭服务」都走它。
 
 ## 授权和执行
 

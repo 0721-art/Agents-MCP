@@ -110,8 +110,9 @@ npm run build:exe        # 输出 dist/Agents-MCP.exe
 
 1. 打开面板 → 设置 → **接入状态**：三行分别是 Codex CLI、Claude Code、DSH。显示「已注册」表示配置写对了，显示「使用中」表示这个客户端刚刚真的连上并调用了工具。
 2. 在客户端里让它调用任意 `agents_*` 工具（例如"列出可用 Agent"），回到面板刷新，那一行会立刻变成「使用中」并显示调用次数。
-3. 想临时关掉，就在同一行点「停用」——Codex 会写入 `enabled = false`，Claude Code 会把这一条从 `~/.claude.json` 里摘下来（配置留在状态目录，点「启用」原样还回去），DSH 会给插件行加上 `disabled: true`。改完需要重启对应客户端。
-4. 命令行同样可以看：`Agents-MCP.exe --bridges`（源码环境 `node bin/agents-mcp.js --bridges`）。
+3. 「最近调用」按时间倒序列出最近 15 次工具调用：时间、客户端、工具名、耗时、任务开头。**这里没有任何记录，就说明任务没有经过本 MCP**——不是它没生效，而是那个 agent 根本没调用工具。
+4. 想临时关掉，就在同一行点「停用」——Codex 会写入 `enabled = false`，Claude Code 会把这一条从 `~/.claude.json` 里摘下来（配置留在状态目录，点「启用」原样还回去），DSH 会给插件行加上 `disabled: true`。改完需要重启对应客户端。
+5. 命令行同样可以看：`Agents-MCP.exe --bridges`（源码环境 `node bin/agents-mcp.js --bridges`）。
 
 「已注册但从未调用」通常意味着客户端还没重启，或者它自己的 MCP 开关是关的（Codex 可以 `codex mcp list`、Claude Code 可以 `claude mcp list` 核对）。
 

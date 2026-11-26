@@ -89,3 +89,16 @@ button.danger:hover { background: #fdeeee; }
 .health-value { flex: 1 1 auto; word-break: break-all; }
 .health-value.bad, .hint.bad { color: #b23b3b; }
 .health-value.good { color: #1f7a3f; font-weight: 600; }
+
+.health-title {
+  margin: 14px 0 6px;
+  font-size: .86rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: none;
+}
+
+.health-row > .health-value:last-child {
+  flex: 1 1 20rem;
+  overflow-wrap: anywhere;
+}

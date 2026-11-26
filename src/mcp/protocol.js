@@ -47,7 +47,10 @@ export function createProtocol(service) {
     const progress = typeof progressToken === 'string' || typeof progressToken === 'number';
     const sendProgress = (count, text) => notify({ jsonrpc: '2.0', method: 'notifications/progress',
       params: { progressToken, progress: count, total: 2, message: text } });
-    await service.noteCall?.();
+    const started = Date.now();
+    let toolName = params.name;
+    let failed = false;
+    let task = params.arguments?.task;
     if (progress) sendProgress(1, 'Processing request');
     try {
       const tool = tools.get(params.name);
@@ -55,8 +58,10 @@ export function createProtocol(service) {
       data = await tool.call(params.arguments ?? {});
     } catch (error) {
       isError = true;
+      failed = true;
       data = errorInfo(error);
     }
+    await service.noteCall?.({ tool: toolName, ok: !failed, ms: Date.now() - started, task });
     if (progress) sendProgress(2, isError ? 'Request failed' : 'Request handled');
     // Gate replies already redact their free text and carry an opaque task ID.
     const structuredContent = Object.hasOwn(data, 'taskId') ? data : service.redact(data);
