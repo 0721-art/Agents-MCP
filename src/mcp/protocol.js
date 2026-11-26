@@ -1,4 +1,5 @@
 import { object, problem } from '../config.js';
+import { version } from '../update.js';
 import { toolMap } from './tools.js';
 
 export const versions = ['2025-06-18', '2025-03-26', '2024-11-05'];
@@ -26,7 +27,7 @@ export function createProtocol(service) {
     if (method === 'initialize') {
       if (typeof params?.protocolVersion !== 'string') return rpcError(id, -32602, 'protocolVersion is required');
       return success({ protocolVersion: versions.includes(params.protocolVersion) ? params.protocolVersion : versions[0],
-        capabilities: { tools: {}, logging: {} }, serverInfo: { name: 'agents', version: '0.1.0' } });
+        capabilities: { tools: {}, logging: {} }, serverInfo: { name: 'agents', version } });
     }
     if (method === 'ping') return success({});
     if (method === 'logging/setLevel') {

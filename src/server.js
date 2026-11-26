@@ -4,7 +4,7 @@ import { configWith, defaults, identifier, object, problem } from './config.js';
 import { delegationCaps, executeDispatch } from './engine/dispatch.js';
 import { executeFlow, validateFlow } from './engine/flow.js';
 import { createGate } from './engine/gate.js';
-import { createStore, stateDirectory } from './engine/store.js';
+import { createStore, resolveStateDirectory } from './engine/store.js';
 import { createRegistry } from './registry/index.js';
 import { deletePreset, readPresets, savePreset } from './presets.js';
 import { run } from './runner/exec.js';
@@ -28,7 +28,8 @@ function inside(root, path) {
 }
 
 export async function createService({ stateDir, env = process.env, cwd = process.cwd() } = {}) {
-  const store = await createStore(stateDirectory(stateDir, env), env);
+  const resolved = await resolveStateDirectory({ dir: stateDir, env });
+  const store = await createStore(resolved.dir, env);
   const configPath = join(store.dir, 'config.json');
   let config = configWith(defaults, await store.readJson(configPath, {}));
   let configWrites = Promise.resolve();
@@ -243,10 +244,10 @@ export async function createService({ stateDir, env = process.env, cwd = process
     redact: store.redact, listAgents: args => registry.list(args), pending: () => gate.pending(),    gate: args => gate.decide(request(args)),
     presets: () => readPresets(store),
     savePreset: input => savePreset(store, input),
-    deletePreset: id => deletePreset(store, id), getConfig: () => ({ ...config, stateDir: store.dir, version: version }),
+    deletePreset: id => deletePreset(store, id), getConfig: () => ({ ...config, stateDir: store.dir, stateFallback: resolved.fallback, version: version }),
     // The panel asks once on load and again only when the user presses 检查更新.
     update: ({ fresh = false } = {}) => checkForUpdate({ stateDir: store.dir, env, fresh }),
-    applyUpdate: () => upgradeCheckout({ env }),
+    applyUpdate: () => upgradeCheckout({ stateDir: store.dir, env }),
     setConfig: patch => updateConfig(() => patch),
     override(id, value) {
       if (!identifier(id) || !object(value)) throw problem('E_CONFIG', 'Invalid executable override.');

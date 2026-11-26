@@ -21,6 +21,48 @@ function parseStateJson(source, path) {
   }
 }
 
+async function probeWritable(dir) {
+  const file = join(dir, '.write-test-' + process.pid + '-' + randomBytes(4).toString('hex'));
+  await writeFile(file, 'ok', { mode: 0o600, flag: 'wx' });
+  await rm(file, { force: true });
+}
+
+// A state directory that cannot be written (a low-integrity process, a folder owned by
+// someone else) used to surface as a raw EPERM deep inside the first cache write. Resolve
+// it up front instead: keep an explicit choice and fail with a remedy, fall back to
+// %LOCALAPPDATA% for the default so a packaged run still works.
+export async function resolveStateDirectory({ dir, env }) {
+  const wanted = stateDirectory(dir, env);
+  const explicit = Boolean(dir || env.AGENTS_MCP_HOME);
+  try {
+    await mkdir(wanted, { recursive: true, mode: 0o700 });
+    await probeWritable(wanted);
+    return { dir: wanted, fallback: null };
+  } catch (error) {
+    const reason = error?.code || error?.message || 'unknown error';
+    if (explicit) {
+      throw problem('E_STATE_READONLY',
+        'Cannot write the state directory ' + wanted + ' (' + reason + ').',
+        'Use a writable folder: Agents-MCP.exe --state-dir "%LOCALAPPDATA%\\Agents-MCP", '
+        + 'or start it from a normal (non-elevated, non-sandboxed) session.');
+    }
+    const candidates = [env.LOCALAPPDATA && join(env.LOCALAPPDATA, 'Agents-MCP'),
+      env.TEMP && join(env.TEMP, 'Agents-MCP'),
+      join(homedir(), 'AppData', 'Local', 'Agents-MCP')].filter(Boolean);
+    for (const candidate of candidates) {
+      if (resolve(candidate) === resolve(wanted)) continue;
+      try {
+        await mkdir(candidate, { recursive: true, mode: 0o700 });
+        await probeWritable(candidate);
+        return { dir: candidate, fallback: { from: wanted, reason } };
+      } catch { /* try the next candidate */ }
+    }
+    throw problem('E_STATE_READONLY',
+      'Cannot write ' + wanted + ' (' + reason + ') and no fallback directory was writable.',
+      'Pass --state-dir pointing at a folder this user can write.');
+  }
+}
+
 export async function createStore(dir, env) {
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const redact = createRedactor(env);

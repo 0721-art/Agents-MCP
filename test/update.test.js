@@ -3,9 +3,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { applyUpdate, checkForUpdate, isNewer, parseVersion, version } from '../src/update.js';
+import { createHash } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+import {
+  applyUpdate, checkForUpdate, cleanupInstall, installPending, isNewer, parseVersion, replaceExecutable, version,
+} from '../src/update.js';
 
 test('versions compare the way a user would expect', () => {
   assert.deepEqual(parseVersion('v0.1.10'), [0, 1, 10]);
@@ -82,5 +87,58 @@ test('the check can be switched off', async t => {
 
 test('only a git checkout may update itself', async t => {
   const root = await temp(t);
-  assert.throws(() => applyUpdate({ root, env: {} }), error => error.code === 'E_NOT_CHECKOUT' && /git checkout/.test(error.message));
+  await assert.rejects(applyUpdate({ root, env: {} }), error => error.code === 'E_NOT_CHECKOUT' && /git checkout/.test(error.message));
+});
+
+// The packaged exe replaces its own file: download beside it, rename the running image out
+// of the way, put the new one in place. A checksum mismatch must never be installed.
+async function selfUpdateFixture(t, { bytes = 'new binary', digest } = {}) {
+  const dir = await mkdtemp(join(tmpdir(), 'agents-mcp-swap-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const target = join(dir, 'Agents-MCP.exe');
+  await writeFile(target, 'old binary');
+  const size = Buffer.byteLength(bytes);
+  const asset = { name: 'Agents-MCP.exe', url: 'https://example.test/Agents-MCP.exe', size,
+    digest: digest ?? 'sha256:' + createHash('sha256').update(bytes).digest('hex') };
+  await writeFile(join(dir, 'update-check.json'), JSON.stringify({ latest: 'v0.2.0', asset }) + '\n');
+  const fetchImpl = async () => ({ ok: true, status: 200, body: Readable.toWeb(Readable.from([Buffer.from(bytes)])) });
+  return { dir, target, fetchImpl };
+}
+
+test('a packaged update downloads, checks and swaps in the new binary', async t => {
+  const { dir, target, fetchImpl } = await selfUpdateFixture(t);
+  const result = await replaceExecutable({ stateDir: dir, target, fetchImpl });
+  assert.equal(result.restarting, true);
+  assert.equal(result.version, 'v0.2.0');
+  assert.equal(await readFile(target, 'utf8'), 'new binary');
+  assert.equal(await readFile(target + '.old', 'utf8'), 'old binary');
+});
+
+test('a download that fails its checksum is thrown away', async t => {
+  const { dir, target, fetchImpl } = await selfUpdateFixture(t, { digest: 'sha256:' + '0'.repeat(64) });
+  await assert.rejects(replaceExecutable({ stateDir: dir, target, fetchImpl }), error => error.code === 'E_DOWNLOAD');
+  assert.equal(await readFile(target, 'utf8'), 'old binary');
+});
+
+test('a release without an executable asset is refused instead of half-applied', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'agents-mcp-swap-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const target = join(dir, 'Agents-MCP.exe');
+  await writeFile(target, 'old binary');
+  await writeFile(join(dir, 'update-check.json'), JSON.stringify({ latest: 'v0.2.0', asset: null }) + '\n');
+  await assert.rejects(replaceExecutable({ stateDir: dir, target, fetchImpl: async () => { throw new Error('no network'); } }),
+    error => error.code === 'E_NO_ASSET');
+  assert.equal(await readFile(target, 'utf8'), 'old binary');
+});
+
+test('a swap refused by the folder is retried on the next launch', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'agents-mcp-pending-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const target = join(dir, 'Agents-MCP.exe');
+  await writeFile(target, 'old binary');
+  await writeFile(target + '.new', 'new binary');
+  assert.equal(installPending({ target }), true);
+  assert.equal(await readFile(target, 'utf8'), 'new binary');
+  cleanupInstall({ target });
+  assert.equal(installPending({ target }), false);
 });

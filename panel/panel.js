@@ -118,12 +118,16 @@ function renderUpdate() {
   link.href = updateInfo.url;
   link.target = '_blank';
   link.rel = 'noreferrer';
-  const action = updateInfo.checkout
-    ? button('更新到 v' + updateInfo.latest, async () => {
+  const label = updateInfo.packaged ? '立即更新到 v' : '更新到 v';
+  const action = updateInfo.canSelfUpdate
+    ? button(label + updateInfo.latest, async () => {
       const result = await api('/update/apply', 'POST', {});
       updateDismissed = true;
       renderUpdate();
       message(result.restart || '已更新到最新版本，重启服务后生效。');
+      // The replaced binary restarts the service on the same port; wait for it, then
+      // reload so the panel talks to the new version.
+      if (result.restarting) setTimeout(() => window.location.reload(), 5000);
     }, 'primary')
     : button('打开发布页', async () => {
       window.open(updateInfo.url, '_blank', 'noopener');
@@ -143,7 +147,9 @@ async function loadUpdate(fresh = false) {
   try {
     updateInfo = await api('/update' + (fresh ? '?fresh=1' : ''));
     renderUpdate();
-    if (fresh && !updateInfo.newer) message('已是当前最新版本 v' + updateInfo.current + '。');
+    // A failed check is not "up to date": say so only when the user asked for it.
+    if (fresh && updateInfo.error) message('检查更新失败：' + updateInfo.error, true);
+    else if (fresh && !updateInfo.newer) message('已是当前最新版本 v' + updateInfo.current + '。');
   } catch (error) {
     message(error.message, true);
   }
@@ -411,6 +417,9 @@ function renderSettings() {
   $('step-timeout').value = config.stepTimeoutMinutes;
   $('parallel').value = config.maxParallel;
   $('state-dir').value = config.stateDir;
+  $('state-note').textContent = config.stateFallback
+    ? '默认目录 ' + config.stateFallback.from + ' 不可写（' + config.stateFallback.reason + '），已改用当前目录。用 --state-dir 可以固定下来。'
+    : '通过启动参数 --state-dir 更改';
   $('version').value = config.version ?? '';
   $('caps').replaceChildren(...Object.entries(caps).map(([key, label]) => {
     const value = capValues[key] ?? config.modeB[key];
@@ -468,10 +477,12 @@ async function loadGate() {
       afterGate.delete(entry.taskId);
       await loadGate();
       if (resume && (result.status === 'enabled' || result.decision === 'enable')) await resume();
+      else if (result.status === 'dismissed') message('已忽略这条已过期的授权请求。');
       else message(result.decision === 'enable' ? '已启用此任务。' : '授权决定已保存。');
     };
     return group('gate-entry', group('subheading', el('strong', entry.question), group('actions',
-      button('启用', () => decide('enable'), 'primary'), button('禁用', () => decide('disable')))), el('p', entry.task));
+      button('启用', () => decide('enable'), 'primary'), button('禁用', () => decide('disable')),
+      button('忽略', () => decide('dismiss')))), el('p', entry.task));
   }));
 }
 async function waitForGate(result, launch) {

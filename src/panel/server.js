@@ -38,7 +38,7 @@ async function readJson(req) {
   }
 }
 
-export async function createHttp(service, { port = service.getConfig().port, onShutdown } = {}) {
+export async function createHttp(service, { port = service.getConfig().port, onShutdown, onUpdate } = {}) {
   const mcp = mcpHttp(service, readJson, sendJson);
   let expectedPort;
   const server = createServer(async (req, res) => {
@@ -82,7 +82,10 @@ export async function createHttp(service, { port = service.getConfig().port, onS
         'GET /api/update': () => service.update({ fresh: url.searchParams.get('fresh') === '1' }),
         'POST /api/update/apply': async () => {
           await value();
-          return service.applyUpdate();
+          const applied = await service.applyUpdate();
+          // A replaced binary only takes effect after a restart; answer first, then exit.
+          if (applied?.restarting && onUpdate) res.on('finish', () => { try { onUpdate(); } catch { /* already stopping */ } });
+          return applied;
         },
         'POST /api/delegate': async () => service.delegate(await value()),
         'POST /api/draft-role': async () => service.draftRole(await value()),

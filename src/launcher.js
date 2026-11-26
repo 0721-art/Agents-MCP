@@ -11,6 +11,8 @@ import { stateDirectory } from './engine/store.js';
 import { createHttp } from './panel/server.js';
 import { createService } from './server.js';
 import { installShortcuts, removeShortcuts } from './shortcut.js';
+import { cleanupInstall, installPending } from './update.js';
+import { serve } from './cli.js';
 
 const attempts = 10;
 
@@ -58,11 +60,11 @@ export function openUrl(url) {
   spawn(command, args, { stdio: 'ignore', detached: true, windowsHide: true }).unref();
 }
 
-async function listen(service, base, onShutdown) {
+async function listen(service, base, onShutdown, onUpdate) {
   for (let offset = 0; offset < attempts; offset++) {
     const port = base + offset;
     try {
-      return await createHttp(service, { port, onShutdown });
+      return await createHttp(service, { port, onShutdown, onUpdate });
     } catch (error) {
       if (error.code !== 'EADDRINUSE') throw error;
       if (await isOurInstance(port)) return { existing: port };
@@ -72,13 +74,32 @@ async function listen(service, base, onShutdown) {
 }
 
 export async function run(argv = process.argv.slice(2)) {
+  // A previous self-update that could not swap in place left its download beside the
+  // binary. Do the swap first, then hand over to the new image.
+  if (installPending()) {
+    spawn(process.execPath, argv, { stdio: 'ignore', detached: true, cwd: process.cwd() }).unref();
+    return;
+  }
+  cleanupInstall();
   const { values } = parseArgs({ args: argv, options: {
     port: { type: 'string' }, 'state-dir': { type: 'string' }, 'no-open': { type: 'boolean' },
     check: { type: 'boolean' }, help: { type: 'boolean' }, stop: { type: 'boolean' },
     install: { type: 'boolean' }, startup: { type: 'boolean' }, uninstall: { type: 'boolean' },
+    mcp: { type: 'string' }, selftest: { type: 'boolean' }, panel: { type: 'boolean' },
   } });
+  // Same flags as the Node CLI, so a tool that speaks MCP to bin/agents-mcp.js can point
+  // at this executable instead and needs no Node on the machine.
+  if (values.mcp !== undefined || values.selftest) {
+    await serve({
+      mcp: values.mcp ?? 'stdio', port: values.port, stateDir: values['state-dir'],
+      panel: Boolean(values.panel), selftest: Boolean(values.selftest),
+    });
+    return;
+  }
   if (values.help) {
     say('Usage: Agents-MCP [--port N] [--state-dir DIR] [--no-open] [--check]\n'
+      + '       Agents-MCP --mcp=stdio|http [--panel] [--port N] [--state-dir DIR]   run as an MCP server\n'
+      + '       Agents-MCP --selftest              probe every agent once and print the result\n'
       + '       Agents-MCP --install [--startup]   create Desktop and Start Menu shortcuts\n'
       + '       Agents-MCP --uninstall             remove those shortcuts\n'
       + '       Agents-MCP --stop                  stop the service running on the configured port\n'
@@ -125,6 +146,21 @@ export async function run(argv = process.argv.slice(2)) {
   }
   const listener = await listen(service, base, () => {
     service.close();
+    process.exit(0);
+  }, async () => {
+    // The binary on disk is the new one already; the running image is not. Release the
+    // port, then start the replaced executable with the same arguments.
+    try {
+      await new Promise(resolve => {
+        try {
+          listener.close(resolve);
+        } catch {
+          resolve();
+        }
+      });
+      await service.close();
+    } catch { /* keep going: the new process takes the port either way */ }
+    spawn(process.execPath, argv, { stdio: 'ignore', detached: true, cwd: process.cwd() }).unref();
     process.exit(0);
   });
   const port = listener.existing ?? listener.address().port;

@@ -4,6 +4,14 @@ import { problem } from '../config.js';
 
 const fingerprintVersion = 2;
 const question = '是否为此任务启用 Agents-MCP？';
+// A pending question that nobody answered is stale after a day: tasks are either finished
+// or abandoned by then, and a banner that never goes away trains people to ignore it.
+export const pendingTtlMs = 24 * 60 * 60 * 1000;
+const stale = (entry, now) => {
+  if (entry?.status !== 'confirmation_required') return false;
+  const createdAt = Date.parse(entry.createdAt ?? '');
+  return !Number.isFinite(createdAt) || now - createdAt > pendingTtlMs;
+};
 
 function taskFingerprint(task) {
   if (typeof task !== 'string' || !task.trim()) throw problem('E_TASK', 'Task text is required.');
@@ -48,6 +56,14 @@ export async function createGate(store) {
   return {
     async pending() {
       await writes;
+      const now = Date.now();
+      const gone = [...entries.entries()].filter(([, entry]) => stale(entry, now)).map(([id]) => id);
+      if (gone.length) {
+        await update(copy => {
+          for (const id of gone) copy.delete(id);
+          return { status: 'pruned', taskId: gone[0] };
+        });
+      }
       return [...entries.values()].filter(entry => entry.status === 'confirmation_required').map(publicEntry);
     },
     check({ task, taskId, mode }, policy) {
@@ -62,23 +78,29 @@ export async function createGate(store) {
         if (existing?.decision) {
           return { status: existing.decision === 'enable' ? 'enabled' : 'disabled_by_user', taskId };
         }
-        if (existing) return { status: existing.status, taskId };
+        if (existing && !stale(existing, Date.now())) return { status: existing.status, taskId };
         const pending = {
           status: 'confirmation_required', taskId, task: store.redact(task), mode,
-          question: store.redact(question),
+          question: store.redact(question), createdAt: new Date().toISOString(),
         };
         copy.set(taskId, { ...pending, fingerprint, fingerprintVersion });
         return pending;
       });
     },
     decide({ task, taskId, decision, mode }) {
-      if (!['enable', 'disable'].includes(decision)) throw problem('E_DECISION', 'Choose enable or disable.');
+      if (!['enable', 'disable', 'dismiss'].includes(decision)) throw problem('E_DECISION', 'Choose enable, disable, or dismiss.');
       if (mode !== undefined && !['A', 'B'].includes(mode)) throw problem('E_MODE', 'Choose mode A or B.');
       taskId = taskKey(task, taskId);
       return update(copy => {
         const existing = copy.get(taskId);
         if (existing) verifyBinding(existing, task === undefined ? undefined : taskFingerprint(task));
         if (existing?.decision) return { status: 'already_decided', taskId, decision: existing.decision };
+        if (decision === 'dismiss') {
+          // Forgetting the question means the next run asks again; it never enables anything.
+          if (!existing) return { status: 'dismissed', taskId };
+          copy.delete(taskId);
+          return { status: 'dismissed', taskId };
+        }
         if (existing?.status !== 'confirmation_required') {
           throw problem('E_TASK_ID', 'Run the task first so the confirmation question is issued.');
         }
@@ -86,6 +108,7 @@ export async function createGate(store) {
         const decided = {
           ...entry, decision, mode: existing.mode ?? mode,
           status: decision === 'enable' ? 'enabled' : 'disabled_by_user',
+          decidedAt: new Date().toISOString(),
         };
         copy.set(taskId, decided);
         return publicEntry(decided);

@@ -35,25 +35,40 @@ export function runtimeExecutable({ execPath = process.execPath, cwd = process.c
   return join(cwd, 'dist', 'Agents-MCP.exe');
 }
 
-function powershell(script) {
+// The failing folder and the reason matter more than the stack PowerShell prints: a shortcut
+// that cannot be written is almost always a permissions problem, not a broken install.
+function shortcutFailure(entry, result) {
+  const raw = ((result.stderr ?? '') + (result.stdout ?? '')).trim();
+  const reason = raw
+    ? (/UnauthorizedAccess|Access is denied|拒绝访问/i.test(raw) ? 'no permission to write this folder'
+      : raw.split(/\r?\n/).filter(Boolean).pop())
+    : 'powershell produced no output';
+  const error = new Error('Could not create the shortcut ' + entry.file + ': ' + reason);
+  error.code = 'E_SHORTCUT';
+  error.remedy = /permission|denied|拒绝访问/i.test(raw)
+    ? 'The folder ' + entry.directory + ' is read-only for this account. Run Agents-MCP from a normal '
+      + 'desktop session, or create the shortcut by hand (right-click Agents-MCP.exe → 发送到 → 桌面快捷方式).'
+    : 'The executable still works; create the shortcut by hand if you need one.';
+  throw error;
+}
+
+function powershell(script, entry) {
   const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8' });
-  if (result.status !== 0) {
-    const reason = (result.stderr || result.stdout || 'powershell failed').trim().split(/\r?\n/).pop();
-    throw problem('E_SHORTCUT', 'Could not create the shortcut: ' + reason);
-  }
+  if (result.status !== 0) shortcutFailure(entry, result);
 }
 
 export async function installShortcuts({ exe, env = process.env, startup = false } = {}) {
   if (!exe) throw problem('E_SHORTCUT', 'No executable to point the shortcut at.');
   const plan = shortcutPlan({ env, startup });
-  if (!plan.length) throw problem('E_SHORTCUT', 'Found no Desktop or Start Menu folder to install into.');
+  if (!plan.length) throw problem('E_SHORTCUT', 'Found no Desktop or Start Menu folder to install into.',
+    'Set USERPROFILE/APPDATA, or create the shortcut by hand.');
   for (const entry of plan) {
     powershell('$s = (New-Object -ComObject WScript.Shell).CreateShortcut(' + quote(entry.file) + ');'
       + '$s.TargetPath = ' + quote(exe) + ';'
       + '$s.WorkingDirectory = ' + quote(dirname(exe)) + ';'
       + '$s.IconLocation = ' + quote(exe + ',0') + ';'
       + '$s.Description = ' + quote('Agents-MCP 控制台') + ';'
-      + '$s.Save()');
+      + '$s.Save()', entry);
   }
   return plan.map(entry => entry.file);
 }

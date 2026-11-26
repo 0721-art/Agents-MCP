@@ -46,6 +46,35 @@ async function finish(service, runId) {
   assert.fail('Fixture run did not finish');
 }
 
+test('the update route restarts the service only after answering', async t => {
+  let restarted = 0;
+  const fake = {
+    getConfig: async () => ({ port: 0 }), presets: async () => [], listRuns: async () => [],
+    pending: async () => [], listAgents: async () => [], redact: value => value,
+    update: async () => ({ current: '0.1.0', latest: 'v0.2.0', newer: true }),
+    applyUpdate: async () => ({ ok: true, restarting: true, version: 'v0.2.0' }),
+  };
+  const http = await createHttp(fake, { port: 0, onUpdate: () => { restarted += 1; } });
+  t.after(() => new Promise(resolve => http.close(resolve)));
+  let response;
+  try {
+    response = await fetch('http://127.0.0.1:' + http.address().port + '/api/update/apply', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+  } catch (error) {
+    if (process.platform === 'win32' && error.cause?.code === 'EACCES') {
+      t.skip('Loopback TCP denied by this Windows sandbox.');
+      return;
+    }
+    throw error;
+  }
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.restarting, true);
+  await delay(50);
+  assert.equal(restarted, 1, 'the restart hook runs after the response is finished');
+});
+
 test('gate requires a run request before accepting a decision', async t => {
   const { service } = await setup(t);
   await assert.rejects(service.gate({ task: flow.task, decision: 'enable' }), /run the task first/i);
@@ -81,6 +110,33 @@ test('gate re-asks for legacy approvals and normalizes only CRLF', async t => {
   assert.deepEqual(await service.runFlow({ ...flow, task: 'Start\nFinish' }),
     { status: first.status, taskId: first.taskId });
   assert.notEqual((await service.runFlow({ ...flow, task: ' Start\nFinish' })).taskId, first.taskId);
+});
+
+test('a stale confirmation stops blocking the banner and is asked again', async t => {
+  const { dir, service } = await setup(t);
+  const taskId = 'stale-antigravity-install';
+  const task = 'Install the Antigravity CLI.';
+  const fingerprint = createHash('sha256').update(task.replace(/\r\n/g, '\n')).digest('hex');
+  const old = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  await writeFile(join(dir, 'gate.json'), JSON.stringify({ [taskId]: {
+    status: 'confirmation_required', taskId, task, mode: 'A', question: '是否为此任务启用 Agents-MCP？',
+    fingerprint, fingerprintVersion: 2, createdAt: old,
+  } }));
+  const restarted = await open(dir);
+  assert.deepEqual(await restarted.pending(), []);
+  const asked = await restarted.runFlow(flow);
+  assert.equal(asked.status, 'confirmation_required');
+  assert.ok(Date.parse(asked.createdAt) > Date.parse(old));
+});
+
+test('dismissing a question forgets it without enabling anything', async t => {
+  const { dir, service } = await setup(t);
+  const pending = await service.runFlow(flow);
+  assert.equal(pending.status, 'confirmation_required');
+  assert.equal((await service.gate({ taskId: pending.taskId, decision: 'dismiss' })).status, 'dismissed');
+  assert.deepEqual(await service.pending(), []);
+  await assert.rejects(service.gate({ taskId: pending.taskId, decision: 'enable' }), /run the task first/i);
+  assert.equal((await service.runFlow(flow)).status, 'confirmation_required');
 });
 
 test('gate persists and Mode A hands off artifacts through a review loop', async (t) => {

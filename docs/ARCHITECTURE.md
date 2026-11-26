@@ -6,13 +6,15 @@
 | --- | --- |
 | `src/server.js`、`src/config.js` | 组装服务，校验配置和工作目录，记录并管理后台运行。 |
 | `src/app.js`、`src/launcher.js` | 双击入口：定位空闲端口、复用已运行实例、用默认浏览器打开面板；`--install/--uninstall/--stop` 分别创建快捷方式、删除快捷方式和关闭正在运行的服务。 |
-| `src/shortcut.js` | 用 WScript.Shell 在桌面、开始菜单（可选启动项）写 `Agents-MCP.lnk`；路径由环境变量推导，便于测试。 |
+| `src/shortcut.js` | 用 WScript.Shell 在桌面、开始菜单（可选启动项）写 `Agents-MCP.lnk`；路径由环境变量推导，便于测试；失败时指明是哪个文件夹不可写并给出替代做法。 |
 | `scripts/pack-zip.mjs` | 把 exe、使用说明与 LICENSE 打成 `dist/Agents-MCP-<版本>-win-x64.zip`。 |
+| `src/cli.js` | 源码入口与打包入口共用的启动逻辑：解析 `--panel/--mcp/--port/--state-dir/--selftest/--no-open`、打印自检表、按 stdio 或 HTTP 起服务。 |
+| `src/update.js` | 查最新 release（缓存 6 小时）、git checkout 走 `git pull --ff-only`，打包版则下载同名 exe、校验大小与 `sha256`、替换自身并重启；替换失败时保留 `.new` 待下次启动。 |
 | `src/assets.js` | 读取面板静态文件：开发目录直接读盘，单文件 exe 从内嵌资源读取。 |
 | `src/mcp/` | JSON-RPC 2.0、工具声明、逐行 stdio 与 Streamable HTTP。 |
 | `src/panel/server.js`、`src/panel/folder.js`、`panel/` | 回环监听、静态页面、同源 JSON API，以及用系统文件夹对话框选择工作目录。 |
 | `src/presets.js` | 读写状态目录里的 `presets.json`：校验、去重、同名覆盖，面板据此载入和保存模式 A 预设。 |
-| `src/registry/` | 定位 CLI、并行探测目录、缓存结果并返回可操作的健康提示。 |
+| `src/registry/` | 定位 CLI、并行探测目录、缓存结果并返回可操作的健康提示。10 分钟内的缓存直接返回，过期缓存先应答再后台刷新，所以面板首屏不再等一次全量探测。 |
 | `src/runner/` | 安全启动进程、解析行事件、限制输出缓冲，处理超时和取消。 |
 | `src/engine/` | 持久化授权、依赖图与评审循环、委派循环、原子状态写入。 |
 
@@ -54,7 +56,7 @@ stdio 每行一个 JSON-RPC 消息，日志写入 stderr。HTTP 支持 `POST /mc
 
 ## 授权和执行
 
-`ask-once` 将规范化任务文本的 SHA-256 前 16 位用作默认 ID。也可提供一个显式 ID，首次使用时会绑定任务文本。首个请求返回 `confirmation_required`，重复请求引用同一条待授权记录。待授权条目及决定存入 `gate.json`。决定可由面板或 MCP 提交，写入后不可覆盖。同一个 ID 的决定跨重启有效。模式 A、B 开关独立，策略还支持 `auto-enable` 与 `deny`。职责生成默认直接运行，可以在设置中接入授权。
+`ask-once` 将规范化任务文本的 SHA-256 前 16 位用作默认 ID。也可提供一个显式 ID，首次使用时会绑定任务文本。首个请求返回 `confirmation_required`，重复请求引用同一条待授权记录。待授权条目及决定存入 `gate.json`，并带 `createdAt`：超过 24 小时的待授权视为过期，`pending()` 读到时清理，下一次运行重新询问；用户可以 `dismiss` 单条记录，忽略不会留下拒绝决定。决定可由面板或 MCP 提交，写入后不可覆盖。同一个 ID 的决定跨重启有效。模式 A、B 开关独立，策略还支持 `auto-enable` 与 `deny`。职责生成默认直接运行，可以在设置中接入授权。
 
 **模式 A** 使用 `{task, participants, steps, loops?}`。参与者指定 Agent、模型、强度、角色、职责和写入权限。步骤指定参与者、任务、`dependsOn`、`inputs` 和 `produces`。调度器验证有向无环图，再按依赖和并发上限执行。下游通过产物绝对路径与短摘要接收交接。`{from, to, until: "PASS", maxRounds}` 定义评审循环，`maxRounds` 包含首轮。收到 `CHANGES_REQUESTED` 后，评审路径回到上游起点并携带反馈。循环之外的相关下游等待评审通过。子进程运行失败、超时或明确阻塞会结束该分支。运行结束后生成汇总报告。
 
@@ -73,6 +75,8 @@ stdio 每行一个 JSON-RPC 消息，日志写入 stderr。HTTP 支持 `POST /mc
 工作目录的「浏览…」按钮调用 `POST /api/pick-folder`，服务端用 Windows PowerShell 5.1 的 `-STA` 模式打开 `FolderBrowserDialog`，选中的路径经临时 UTF-8 文件回传（重定向的控制台会丢失非 ASCII 路径）。该接口只在本机同源下可用。
 
 ## 状态目录
+
+`src/engine/store.js` 的 `resolveStateDirectory()` 先确认目录可写（探针文件）：`--state-dir` 或 `AGENTS_MCP_HOME` 明确指定但不可写时直接报 `E_STATE_READONLY` 并给出可用命令；默认目录不可写时按 `%LOCALAPPDATA%\Agents-MCP` → `%TEMP%\Agents-MCP` → `~/AppData/Local/Agents-MCP` 依次回退，回退来源经 `GET /api/config` 的 `stateFallback` 暴露给设置页。
 
 ```text
 config.json

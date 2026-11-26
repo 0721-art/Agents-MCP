@@ -60,15 +60,30 @@ export default adapter({
   locate: context => locate('agy', context, win
     ? [join(context.env.LOCALAPPDATA || localApp(context.env), 'agy', 'bin', 'agy.exe'),
       join(localApp(context.env), 'agy', 'bin', 'agy.exe')] : []),
+  // A missing catalog has three very different causes; naming them saves a support round.
   async probe({ exe, env, signal }) {
     const [listing, version] = await Promise.all([
       probeCommand(exe, ['models'], env, signal), probeCommand(exe, ['--version'], env, signal),
     ]);
     const models = parseModels(listing.stdoutTail);
     if (listing.code !== 0 || !models.length) {
-      const auth = /sign in|not logged/i.test(listing.stdoutTail + listing.stderrTail);
-      return { ...failure(auth ? 'Antigravity model catalog needs a signed-in CLI.' : 'agy models returned no usable catalog.',
-        'Sign in to agy, check the proxy override, then refresh.'), version: version.stdoutTail.trim() };
+      const output = listing.stdoutTail + '\n' + listing.stderrTail;
+      const detail = (output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).pop() ?? '').slice(0, 200);
+      const suffix = detail ? ' (' + detail + ')' : '';
+      if (/timed out|timeout|ETIMEDOUT/i.test(output)) {
+        return { ...failure('Antigravity timed out while fetching its model list' + suffix + '.',
+          'Check the Antigravity proxy (HTTP_PROXY / HTTPS_PROXY override) and the network, then refresh.'), version: version.stdoutTail.trim() };
+      }
+      if (/sign in|not logged|login|unauthor/i.test(output)) {
+        return { ...failure('Antigravity model catalog needs a signed-in CLI' + suffix + '.',
+          'Run "agy login" in a normal terminal, then refresh.'), version: version.stdoutTail.trim() };
+      }
+      if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|network|proxy|fetch failed|5\d\d\b/i.test(output)) {
+        return { ...failure('Antigravity could not reach its service' + suffix + '.',
+          'A proxy or the network is in the way: set HTTP_PROXY / HTTPS_PROXY below, then refresh.'), version: version.stdoutTail.trim() };
+      }
+      return { ...failure('agy models returned no usable catalog' + suffix + '.',
+        'Run "agy models" in a terminal to see the full error, then refresh.'), version: version.stdoutTail.trim() };
     }
     return { ok: true, models, version: version.stdoutTail.trim(),
       warnings: models.some(entry => entry.defaultEffort === 'default') ? ['Unqualified model IDs use the CLI default effort.'] : [] };

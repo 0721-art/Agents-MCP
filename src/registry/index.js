@@ -9,12 +9,16 @@ import grok from './adapters/grok.js';
 import omp from './adapters/omp.js';
 import pi from './adapters/pi.js';
 
+// A cached catalog is refreshed in the background once it is this old, so the panel opens
+// on the previous result instead of waiting for every CLI.
+const cacheFreshMs = 10 * 60 * 1000;
+
 export function createRegistry({ store, config, env }) {
   let catalog;
   let inFlight;
-  let probingGeneration;
   let generation = 0;
   const adapters = [codex, agy, claude, dsh, pi, omp, grok];
+
   async function detect(spec, settings) {
     const base = { id: spec.id, name: spec.name, available: false, models: [], warnings: [], probedAt: new Date().toISOString() };
     const overrides = Object.hasOwn(settings.agents, spec.id) ? settings.agents[spec.id] : {};
@@ -32,28 +36,61 @@ export function createRegistry({ store, config, env }) {
       return { ...base, ...location, reason: store.redact(error.message), remedy };
     }
   }
-  async function list({ refresh = false } = {}) {
-    if (inFlight) {
-      if (probingGeneration === generation) return inFlight;
-      await inFlight;
-      return list({ refresh });
-    }
-    if (catalog && !refresh) return catalog;
+
+  function probe(refresh) {
+    if (inFlight) return inFlight;
     const settings = config();
     const selected = env.AGENTS_MCP_FIXTURES === '1' ? [fixture] : settings.fixtures ? [...adapters, fixture] : adapters;
     const revision = generation;
-    probingGeneration = revision;
     inFlight = Promise.all(selected.map(spec => detect(spec, settings))).then(async result => {
-      if (revision === generation) {
-        await store.writeJson(join(store.dir, 'agents-cache.json'), result);
-        if (revision === generation) catalog = result;
+      if (revision === generation || refresh) {
+        catalog = result;
+        try {
+          await store.writeJson(join(store.dir, 'agents-cache.json'), result);
+        } catch {
+          // A read-only state directory must not break agent listing; the panel still
+          // works from memory and the next successful write refreshes the file.
+        }
       }
       return result;
     }).finally(() => { inFlight = undefined; });
     return inFlight;
   }
+
+  // Probing behind a cached answer: failures are already encoded per agent, and a rejected
+  // promise must not surface as an unhandled rejection.
+  function refreshInBackground(stale) {
+    if (!stale || inFlight) return;
+    probe(true).catch(() => {});
+  }
+
+  function stale(entries) {
+    const newest = entries.reduce((latest, entry) => {
+      const stamp = Date.parse(entry?.probedAt ?? '') || 0;
+      return stamp > latest ? stamp : latest;
+    }, 0);
+    return Date.now() - newest > cacheFreshMs;
+  }
+
+  async function list({ refresh = false } = {}) {
+    if (refresh) return probe(true);
+    if (Array.isArray(catalog)) {
+      refreshInBackground(stale(catalog));
+      return catalog;
+    }
+    const stored = await store.readJson(join(store.dir, 'agents-cache.json'), null).catch(() => null);
+    if (Array.isArray(stored) && stored.length) {
+      catalog = stored;
+      refreshInBackground(stale(stored));
+      return catalog;
+    }
+    return probe(false);
+  }
+
   return {
     list, invalidate() { generation++; catalog = undefined; },
+    // True while a probe runs, so a caller can tell a cached answer from a fresh one.
+    probing: () => Boolean(inFlight),
     async get({ agent, model, effort }) {
       const info = (await list()).find(entry => entry.id === agent);
       if (!info?.available) throw problem('E_AGENT_UNAVAILABLE', (agent || 'Agent') + ': ' + (info?.reason ?? 'Unknown agent.'),

@@ -29,7 +29,7 @@ node bin/agents-mcp.js --selftest                     # CLI 与模型目录探�
 
 面板默认地址为 `http://127.0.0.1:4870/`，HTTP MCP 使用同一端口的 `/mcp`。MCP 服务名为 `agents`。stdio 主机使用 `node` 作为命令，并将 `bin/agents-mcp.js` 的绝对路径作为参数。
 
-启动参数 `--port N` 可覆盖端口，`--state-dir DIR` 可覆盖状态目录。也可使用 `AGENTS_MCP_HOME`；默认目录在 Windows 是 `%APPDATA%\Agents-MCP`，在其他系统是 `$XDG_STATE_HOME/agents-mcp`，后者回退到 `~/.local/state/agents-mcp`。面板设置里的端口在重启后生效。
+启动参数 `--port N` 可覆盖端口，`--state-dir DIR` 可覆盖状态目录。若默认目录不可写（例如低权限或受限账户），服务会自动回退到 `%LOCALAPPDATA%\Agents-MCP`，并在设置页注明回退到了哪里；`--state-dir` 指定的目录不可写时直接报错并给出可用的命令，不会静默丢数据。也可使用 `AGENTS_MCP_HOME`；默认目录在 Windows 是 `%APPDATA%\Agents-MCP`，在其他系统是 `$XDG_STATE_HOME/agents-mcp`，后者回退到 `~/.local/state/agents-mcp`。面板设置里的端口在重启后生效。
 
 ## 控制台
 
@@ -38,7 +38,8 @@ node bin/agents-mcp.js --selftest                     # CLI 与模型目录探�
   - 「帮我写职责」默认由参与者自己的 Agent 和模型代笔；参与者一栏上方的「职责代笔」可以指定另一个 Agent、模型和思考强度（例如让便宜的模型写初稿、让强的模型统一口径），选「跟随参与者自己的 Agent」即回到默认行为。代笔走的是同一条 `agents_draft_role` 通道，沙箱内只读、不写文件。
 - **模式 B** 指定主 Agent、填写其他 Agent 的专长、设置委派上限。运行记录显示委派树。
 - **运行记录** 展示步骤状态、耗时、思考过程、事件、产物和报告，运行期间可取消。
-- **设置** 管理任务授权策略、两种模式的开关、端口、默认超时和并发。
+- **设置** 管理任务授权策略、两种模式的开关、端口、默认超时和并发，并显示当前状态目录与版本。
+- 待确认的任务授权超过 24 小时会自动失效（过期的提示不再挡住页面，下次运行重新询问）；也能在提示条上点「忽略」直接丢弃，忽略不等于拒绝，任务下次仍会询问。
 
 ## 思考过程
 
@@ -98,16 +99,18 @@ npm run build:exe        # 输出 dist/Agents-MCP.exe
 - 端口被其他程序占用时，依次向后尝试 10 个端口，全部失败才报错。
 - 启动失败的原因同时写入 `%APPDATA%\Agents-MCP\launcher.log`（没有控制台，这是唯一能看到错误的地方）。
 - 可选参数：`--port N`、`--state-dir DIR`、`--no-open`（只启动服务、不打开浏览器）、`--check`（只校验可执行文件）。
+- 打包版和源码版能力一致：`Agents-MCP.exe --mcp=stdio` 可以直接作为 MCP 主机里的命令，`Agents-MCP.exe --selftest` 打印同样的探测结果，`--mcp=http --panel` 同时开 HTTP MCP 与面板。
 - exe 未做代码签名，首次运行可能出现 SmartScreen 提示，选择"仍要运行"即可。
 - 打包版不含测试 fixture，`AGENTS_MCP_FIXTURES` 只对源码运行有效；Agent 仍按本机 CLI 的实际登录状态探测。
 - exe 运行时通过 npm 安装的 Agent（如 `dsh`、`pi`）会改用 PATH 上的 `node` 执行其 shim；缺少 Node.js 时这些 Agent 会显示不可用并提示安装。
 
-## 更新提醒
+## 更新
 
 面板加载时会查一次 GitHub 上的最新 release，结果缓存在状态目录 6 小时（设置页的"检查更新"按钮会强制刷新）。发现新版本时顶部出现提示条，按运行方式给出不同动作：
 
 - **git checkout 运行**：按钮是"更新到 vX"，执行 `git pull --ff-only` + `npm install`，完成后重启服务生效。
-- **打包 exe 运行**：按钮是"打开发布页"，因为运行中的 exe 无法替换自己，下载新 exe 覆盖即可。
+- **打包 exe 运行**：按钮是"立即更新到 vX"，从 release 里下载同名 exe，校验大小与 `sha256` 后替换自身并自动重启；文件夹不可写时会先存成 `Agents-MCP.exe.new`，下次启动时自动换上。校验不通过则丢弃下载的文件，原 exe 保持不动。
+- 两步操作都在面板里完成，不需要手动下载；只有设置目录完全不可写、无法暂存新版本时，才提示去打开发布页。
 - 点"稍后"只是本次页面隐藏提示，重新加载会再提醒。
 - 不想联网检查：`AGENTS_MCP_NO_UPDATE_CHECK=1`。设置页始终显示当前版本。
 
