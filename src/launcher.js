@@ -13,6 +13,7 @@ import { createService } from './server.js';
 import { installShortcuts, removeShortcuts } from './shortcut.js';
 import { cleanupInstall, installPending } from './update.js';
 import { serve } from './cli.js';
+import { openWindow } from './window.js';
 
 const attempts = 10;
 
@@ -60,6 +61,15 @@ export function openUrl(url) {
   spawn(command, args, { stdio: 'ignore', detached: true, windowsHide: true }).unref();
 }
 
+// A desktop window by default; --browser keeps the old behaviour of a normal tab.
+export function openPanel(url, { stateDir, browser = false }) {
+  if (browser) {
+    openUrl(url);
+    return { mode: 'browser' };
+  }
+  return openWindow({ url, stateDir, open: openUrl });
+}
+
 async function listen(service, base, onShutdown, onUpdate) {
   for (let offset = 0; offset < attempts; offset++) {
     const port = base + offset;
@@ -86,6 +96,7 @@ export async function run(argv = process.argv.slice(2)) {
     check: { type: 'boolean' }, help: { type: 'boolean' }, stop: { type: 'boolean' },
     install: { type: 'boolean' }, startup: { type: 'boolean' }, uninstall: { type: 'boolean' },
     mcp: { type: 'string' }, selftest: { type: 'boolean' }, bridges: { type: 'boolean' }, panel: { type: 'boolean' },
+    browser: { type: 'boolean' },
   } });
   // Same flags as the Node CLI, so a tool that speaks MCP to bin/agents-mcp.js can point
   // at this executable instead and needs no Node on the machine.
@@ -105,7 +116,8 @@ export async function run(argv = process.argv.slice(2)) {
       + '       Agents-MCP --install [--startup]   create Desktop and Start Menu shortcuts\n'
       + '       Agents-MCP --uninstall             remove those shortcuts\n'
       + '       Agents-MCP --stop                  stop the service running on the configured port\n'
-      + 'Starts the local panel and opens it in the default browser.\n');
+      + '       Agents-MCP --browser               open the panel in a normal browser tab instead of its own window\n'
+      + 'Starts the local service and opens the panel in its own window.\n');
     return;
   }
   if (values.check) {
@@ -169,12 +181,12 @@ export async function run(argv = process.argv.slice(2)) {
   const url = 'http://127.0.0.1:' + port + '/';
   if (listener.existing) {
     await service.close();
-    if (!values['no-open']) openUrl(url);
+    if (!values['no-open']) openPanel(url, { stateDir: service.getConfig().stateDir, browser: Boolean(values.browser) });
     say('Agents-MCP is already running at ' + url + '\n');
     return;
   }
   say('Agents-MCP panel at ' + url + '\n');
-  if (!values['no-open']) openUrl(url);
+  if (!values['no-open']) openPanel(url, { stateDir: service.getConfig().stateDir, browser: Boolean(values.browser) });
   const close = () => Promise.all([new Promise(resolve => listener.close(resolve)), service.close()]);
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGBREAK']) {
     process.once(signal, () => close().then(() => process.exit(0), () => process.exit(1)));
