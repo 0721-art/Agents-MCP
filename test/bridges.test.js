@@ -1,10 +1,10 @@
 // Each client row answers "did it really connect", not just "is it in a config file".
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { clientBridges, createUsage, readHistory, usageId } from '../src/bridges.js';
+import { clientBridges, createUsage, readHistory, setBridge, usageId } from '../src/bridges.js';
 
 async function home() {
   const root = await mkdtemp(join(tmpdir(), 'amcp-bridges-'));
@@ -84,4 +84,92 @@ test('a call is remembered across restarts', async () => {
   const again = createUsage(root);
   await again.load();
   assert.equal(again.snapshot().codex.calls, 1);
+});
+
+test('turning codex off writes enabled = false and turning it back on removes the line', async () => {
+  const { root, env } = await home();
+  await mkdir(join(root, '.codex'), { recursive: true });
+  const config = join(root, '.codex', 'config.toml');
+  const before = [
+    'model = "gpt-6.2-sol"',
+    '',
+    '[mcp_servers.agents-mcp]',
+    'default_tools_approval_mode = "approve"',
+    "command = 'node'",
+    '',
+    '[mcp_servers.other]',
+    'enabled = false',
+  ].join('\n');
+  await writeFile(config, before);
+
+  await setBridge({ id: 'codex', enabled: false, env });
+  let after = await readFile(config, 'utf8');
+  assert.match(after, /\[mcp_servers\.agents-mcp\]\ndefault_tools_approval_mode = "approve"/);
+  assert.match(after, /\nenabled = false\n/);
+  assert.equal((after.match(/enabled = false/g) ?? []).length, 2, 'the other table keeps its own line');
+  assert.equal((await clientBridges({ env })).find(row => row.id === 'codex').enabled, false);
+
+  await setBridge({ id: 'codex', enabled: true, env });
+  after = await readFile(config, 'utf8');
+  assert.match(after, /\[mcp_servers\.agents-mcp\]\ndefault_tools_approval_mode = "approve"/);
+  assert.equal((after.match(/enabled = false/g) ?? []).length, 1, 'only the unrelated table is still disabled');
+  assert.equal((await clientBridges({ env })).find(row => row.id === 'codex').enabled, true);
+});
+
+test('a client that was never configured cannot be switched off', async () => {
+  const { env } = await home();
+  await assert.rejects(setBridge({ id: 'codex', enabled: false, env }), error => error.code === 'E_NOT_CONFIGURED');
+  await assert.rejects(setBridge({ id: 'dsh', enabled: false, env }), error => error.code === 'E_NOT_CONFIGURED');
+  await assert.rejects(setBridge({ id: 'cursor', enabled: false, env }), error => error.code === 'E_UNKNOWN_CLIENT');
+});
+
+test('claude code is switched by removing its server and putting it back', async () => {
+  const { root, env } = await home();
+  const stateDir = join(root, 'state');
+  await mkdir(stateDir, { recursive: true });
+  const config = join(root, '.claude.json');
+  const entry = { type: 'stdio', command: 'node', args: ['agents-mcp.js', '--mcp=stdio'] };
+  await writeFile(config, JSON.stringify({ numStartups: 3, mcpServers: { 'agents-mcp': entry } }));
+
+  await setBridge({ id: 'claude', enabled: false, env, stateDir });
+  const off = JSON.parse(await readFile(config, 'utf8'));
+  assert.equal(off.mcpServers['agents-mcp'], undefined);
+  assert.equal(off.numStartups, 3, 'the rest of the file survives');
+  assert.equal((await clientBridges({ env })).find(row => row.id === 'claude').configured, false);
+
+  await setBridge({ id: 'claude', enabled: true, env, stateDir });
+  const on = JSON.parse(await readFile(config, 'utf8'));
+  assert.deepEqual(on.mcpServers['agents-mcp'], entry);
+  assert.equal((await clientBridges({ env })).find(row => row.id === 'claude').configured, true);
+});
+
+test('the dsh bundle row gains disabled: true and loses it again', async () => {
+  const { root, env } = await home();
+  const profile = join(root, '.dsh', 'profiles', 'desktop');
+  const bundle = join(profile, 'node_modules', 'dsh-agents-mcp');
+  await mkdir(bundle, { recursive: true });
+  await writeFile(join(profile, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['dsh-agents-mcp'] } } }));
+  const patch = join(bundle, 'cordis.patch.yml');
+  const before = [
+    '- insert:',
+    '    - id: agents-mcp-bridge',
+    '      name: "@deepseek-ai/dsh-mcp-client"',
+    '      config:',
+    '        serverName: agents-mcp',
+    '    - id: something-else',
+    '      name: "@deepseek-ai/other"',
+    '',
+  ].join('\n');
+  await writeFile(patch, before);
+
+  await setBridge({ id: 'dsh', enabled: false, env });
+  let after = await readFile(patch, 'utf8');
+  assert.match(after, /- id: agents-mcp-bridge\n(?:.*\n)*? {6}disabled: true\n {4}- id: something-else/);
+  assert.match(after, /\n {4}- id: something-else/, 'the next row is untouched');
+  assert.equal((await clientBridges({ env })).find(row => row.id === 'dsh').enabled, false);
+
+  await setBridge({ id: 'dsh', enabled: true, env });
+  after = await readFile(patch, 'utf8');
+  assert.doesNotMatch(after, /disabled: true/);
+  assert.equal((await clientBridges({ env })).find(row => row.id === 'dsh').enabled, true);
 });

@@ -1,12 +1,126 @@
 // "Is it actually on?" is the question people ask in the middle of using the thing, not
 // while reading docs. These rows answer it from two sides: what each client's config says,
 // and whether that client has really connected and called a tool recently.
-import { readFile } from 'node:fs/promises';
+import { readFile, rename, writeFile } from 'node:fs/promises';
+import { problem } from './config.js';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const serverName = 'agents-mcp';
+
+// Toggles edit the client's own file, so write to a sibling and rename: a half-written
+// config.toml or ~/.claude.json would break the client, not just this panel.
+async function atomicWrite(path, body) {
+  const staging = path + '.tmp-' + process.pid;
+  await writeFile(staging, body);
+  await rename(staging, path);
+}
+
+function codexSection(config) {
+  return config.match(/\[mcp_servers\.["']?agents-mcp["']?\]([\s\S]*?)(?=\n\[|$)/);
+}
+
+async function toggleCodex({ path, enabled }) {
+  const config = await text(path);
+  const section = codexSection(config);
+  if (!section) {
+    throw problem('E_NOT_CONFIGURED', 'Codex has no [mcp_servers.agents-mcp] table in ' + path + '.',
+      'Register it first: node scripts/connect.mjs codex');
+  }
+  const body = section[1];
+  const stripped = body.replace(/^[ \t]*enabled[ \t]*=[ \t]*(?:false|true)[ \t]*\r?\n/gm, '');
+  const next = enabled ? stripped : stripped + 'enabled = false\n';
+  const updated = config.slice(0, section.index) + section[0].replace(body, next) + config.slice(section.index + section[0].length);
+  await atomicWrite(path, updated);
+}
+
+async function toggleClaude({ path, stateDir, enabled, launch }) {
+  const raw = await text(path);
+  let parsed;
+  try {
+    parsed = JSON.parse(raw || '{}');
+  } catch {
+    throw problem('E_NOT_CONFIGURED', 'Cannot read ' + path + ' as JSON.', 'Fix or delete that file, then retry.');
+  }
+  parsed.mcpServers = parsed.mcpServers ?? {};
+  const stashPath = join(stateDir, 'claude-bridge.json');
+  if (!enabled) {
+    const entry = parsed.mcpServers[serverName];
+    if (!entry) {
+      throw problem('E_NOT_CONFIGURED', 'Claude Code has no ' + serverName + ' server in ' + path + '.',
+        'Register it first: node scripts/connect.mjs claude');
+    }
+    await writeFile(stashPath, JSON.stringify(entry));
+    delete parsed.mcpServers[serverName];
+  } else {
+    if (parsed.mcpServers[serverName]) return;
+    let entry = null;
+    try {
+      entry = JSON.parse(await text(stashPath));
+    } catch {
+      entry = null;
+    }
+    parsed.mcpServers[serverName] = entry ?? launch();
+  }
+  await atomicWrite(path, JSON.stringify(parsed, null, 2) + '\n');
+}
+
+async function toggleDsh({ file, enabled }) {
+  const lines = (await text(file)).split('\n');
+  const start = lines.findIndex(line => /^(\s*)-\s*id:\s*agents-mcp-bridge\s*$/.test(line));
+  if (start < 0) {
+    throw problem('E_NOT_CONFIGURED', 'The DSH bundle at ' + file + ' has no agents-mcp-bridge row.',
+      'Reinstall the bundle: node scripts/connect.mjs dsh');
+  }
+  const indent = lines[start].match(/^(\s*)/)[1];
+  let stop = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const item = lines[index].match(/^(\s*)-\s/);
+    if (item && item[1].length <= indent.length) { stop = index; break; }
+  }
+  const body = lines.slice(start + 1, stop).filter(line => !/^\s*disabled:\s*true\s*$/.test(line));
+  if (!enabled) body.push(indent + '  disabled: true');
+  await atomicWrite(file, [...lines.slice(0, start + 1), ...body, ...lines.slice(stop)].join('\n'));
+}
+
+// One switch per client, implemented with that client's own mechanism.
+export async function setBridge({ id, enabled, env = process.env, home = homedir(), stateDir, launch } = {}) {
+  const userHome = env.USERPROFILE || home;
+  if (id === 'codex') {
+    await toggleCodex({ path: join(userHome, '.codex', 'config.toml'), enabled });
+  } else if (id === 'claude') {
+    await toggleClaude({ path: join(userHome, '.claude.json'), stateDir, enabled, launch });
+  } else if (id === 'dsh') {
+    const file = await dshBundleFile({ env, home });
+    if (!file) {
+      throw problem('E_NOT_CONFIGURED', 'DSH has no agents-mcp bundle installed.',
+        'Install it first: node scripts/connect.mjs dsh');
+    }
+    await toggleDsh({ file, enabled });
+  } else {
+    throw problem('E_UNKNOWN_CLIENT', 'Unknown client "' + id + '".', 'Use codex, claude, or dsh.');
+  }
+}
+
+async function dshBundleFile({ env = process.env, home = homedir() }) {
+  const userHome = env.USERPROFILE || home;
+  for (const name of ['desktop', 'headless', 'web']) {
+    const dir = join(userHome, '.dsh', 'profiles', name);
+    if (!existsSync(dir)) continue;
+    let bundles = [];
+    try {
+      bundles = JSON.parse(await text(join(dir, 'package.json')))?.dsh?.profile?.bundles ?? [];
+    } catch {
+      bundles = [];
+    }
+    for (const bundle of bundles.filter(entry => /agents-mcp/i.test(entry))) {
+      const file = join(dir, 'node_modules', bundle, 'cordis.patch.yml');
+      if (existsSync(file)) return file;
+    }
+  }
+  return null;
+}
 
 async function text(path) {
   try {

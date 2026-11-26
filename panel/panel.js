@@ -436,10 +436,26 @@ async function loadBridges() {
     item.append(el('span', row.label, 'health-label'),
       el('span', state, 'health-value ' + (row.connectedNow ? 'good' : row.configured && row.enabled !== false ? '' : 'bad')),
       el('span', value, 'health-value'));
+    if (row.configured) {
+      const off = row.enabled === false;
+      const toggle = el('button', off ? '启用' : '停用');
+      toggle.onclick = async () => {
+        toggle.disabled = true;
+        try {
+          await api('/bridges', 'POST', { id: row.id, enabled: off });
+          message(row.label + (off ? ' 已启用' : ' 已停用'));
+          await loadBridges();
+        } catch (error) {
+          toggle.disabled = false;
+          message(error.message, true);
+        }
+      };
+      item.append(toggle);
+    }
     return item;
   };
   report.replaceChildren(...rows.map(line),
-    el('p', '在 Codex 或 Claude Code 里让它调用任意 agents_* 工具，这一行会立刻变成「使用中」。', 'hint'));
+    el('p', '「停用」会改这个客户端自己的配置，重启该客户端后生效；「启用」会把它接回来。在 Codex 或 Claude Code 里调用任意 agents_* 工具，这一行会立刻变成「使用中」。', 'hint'));
 }
 
 // The problem report's loudest complaint was silence: failures without a reason. The panel

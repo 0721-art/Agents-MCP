@@ -1,6 +1,6 @@
 {
   "name": "agents-mcp",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Standalone MCP server plus local panel that lets one agent orchestrate the other agent CLIs installed on this machine.",
   "type": "module",
   "bin": {

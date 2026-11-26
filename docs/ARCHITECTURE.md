@@ -55,7 +55,7 @@ stdio 每行一个 JSON-RPC 消息，日志写入 stderr。HTTP 支持 `POST /mc
 | `agents_cancel` | `{runId}` → 取消状态 |
 | `agents_draft_role` | `{agent, model, effort, brief, task?, taskId?, cwd?}` → `{runId}` 或授权状态。完成后从状态中读取 `answer`。 |
 
-面板通过 `/api/agents`、`/api/config`、`/api/strengths`、`/api/gate/pending`、`/api/gate`、`/api/flow/validate`、`/api/flow/run`、`/api/delegate`、`/api/runs`、`/api/draft-role`、`/api/presets`、`/api/health`, `/api/bridges`, `/api/update`、`/api/shortcuts` 和 `/api/draft-role` 操作同一服务。`POST /api/shutdown` 先回包再关闭监听与服务，`--stop` 与面板「关闭服务」都走它。
+面板通过 `/api/agents`、`/api/config`、`/api/strengths`、`/api/gate/pending`、`/api/gate`、`/api/flow/validate`、`/api/flow/run`、`/api/delegate`、`/api/runs`、`/api/draft-role`、`/api/presets`、`/api/health`, `/api/bridges` (`GET` 状态 / `POST {id, enabled}` 开关), `/api/update`、`/api/shortcuts` 和 `/api/draft-role` 操作同一服务。`POST /api/shutdown` 先回包再关闭监听与服务，`--stop` 与面板「关闭服务」都走它。
 
 ## 授权和执行
 

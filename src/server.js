@@ -4,14 +4,14 @@ import { configWith, defaults, identifier, object, problem } from './config.js';
 import { delegationCaps, executeDispatch } from './engine/dispatch.js';
 import { executeFlow, validateFlow } from './engine/flow.js';
 import { createGate } from './engine/gate.js';
-import { clientBridges, createUsage } from './bridges.js';
+import { clientBridges, createUsage, setBridge as toggleBridge } from './bridges.js';
 import { environmentReport } from './diagnose.js';
 import { createStore, resolveStateDirectory } from './engine/store.js';
 import { createRegistry } from './registry/index.js';
 import { deletePreset, readPresets, savePreset } from './presets.js';
 import { run } from './runner/exec.js';
 import { normalize } from './runner/events.js';
-import { applyUpdate as upgradeCheckout, checkForUpdate, version } from './update.js';
+import { applyUpdate as upgradeCheckout, checkForUpdate, packaged, version } from './update.js';
 
 const request = value => {
   if (!object(value)) throw problem('E_INPUT', 'Expected an object.');
@@ -272,6 +272,16 @@ export async function createService({ stateDir, env = process.env, cwd = process
         .map(([id, seen]) => ({ id, label: seen.name ?? id, configured: true, enabled: true,
           detail: '通过 MCP 连入的其他客户端', lastSeen: seen.lastSeen, calls: seen.calls ?? 0,
           connectedNow: Date.now() - Date.parse(seen.lastSeen) < 5 * 60 * 1000 })));
+    },
+    // The switch edits the client's own configuration; after that the panel wants the new rows.
+    setBridge: async ({ id, enabled } = {}) => {
+      await toggleBridge({
+        id, enabled: Boolean(enabled), env, stateDir: store.dir,
+        launch: () => (packaged
+          ? { type: 'stdio', command: process.execPath, args: ['--mcp=stdio'] }
+          : { type: 'stdio', command: process.execPath, args: [join(process.cwd(), 'bin', 'agents-mcp.js'), '--mcp=stdio'] }),
+      });
+      return service.bridges();
     },
     noteClient: info => usage.note(info),
     noteCall: () => usage.noteCall(),
