@@ -1,6 +1,7 @@
 import { object, problem } from '../config.js';
 import { version } from '../update.js';
 import { toolMap } from './tools.js';
+import { summarize, textLimit } from './summary.js';
 
 export const versions = ['2025-06-18', '2025-03-26', '2024-11-05'];
 export const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
@@ -82,6 +83,10 @@ export function createProtocol(service) {
         data: service.redact({ tool: params.name, status: structuredContent.status, runId: structuredContent.runId,
           code: isError ? structuredContent.code : undefined }) } });
     }
-    return success({ structuredContent, isError, content: [{ type: 'text', text: JSON.stringify(structuredContent) }] });
+    // Both copies used to carry the whole payload; a big answer now says what it is and
+    // leaves the detail in structuredContent, which halves the tokens such a call costs.
+    const json = JSON.stringify(structuredContent);
+    const body = Buffer.byteLength(json, 'utf8') > textLimit ? summarize(params.name, structuredContent) : json;
+    return success({ structuredContent, isError, content: [{ type: 'text', text: body }] });
   };
 }
