@@ -1,4 +1,4 @@
-// Verified 2026-11-25, 1.5.16 help: --model ID --mode plan|accept-edits
+// Verified 2026-11-25, 1.5.16 help: --model ID --mode plan|accept-edits|auto
 // --input-format stream-json --output-format stream-json [--json-schema FILE] [--resume ID];
 // catalog via models. The prompt travels over stdin as one stream-json user event because
 // Windows argv stops accepting arguments at 32 KiB, and tasks are allowed to be far longer.
@@ -25,12 +25,19 @@ export function parseStream(line) {
   const candidate = event.conversation_id ?? event.result?.conversation_id;
   const sessionId = typeof candidate === 'string' && sessionIdPattern.test(candidate) ? candidate : undefined;
   if (event.event === 'result') {
-    const status = event.result?.status;
-    return {
-      type: status === 'SUCCESS' ? 'result' : 'error',
-      text: event.result?.response || event.result?.error?.message || status || 'Antigravity returned no answer.',
-      sessionId,
-    };
+    const result = event.result ?? {};
+    const response = typeof result.response === 'string' ? result.response : '';
+    const denied = (result.denied_actions ?? []).map(entry => entry.action ?? entry.display_name).filter(Boolean);
+    if (result.status !== 'SUCCESS') {
+      return { type: 'error', text: response || result.error?.message || 'Antigravity reported ' + (result.status ?? 'an error') + '.', sessionId };
+    }
+    if (!response.trim()) {
+      // A SUCCESS with no text means the turn ended before it answered — usually a refused tool.
+      // Saying so is the difference between "reviewer said nothing" and "reviewer was blocked".
+      const suffix = denied.length ? ' It was refused: ' + denied.join(', ') + '.' : '';
+      return { type: 'error', text: 'Antigravity finished without an answer.' + suffix, sessionId };
+    }
+    return { type: 'result', text: response, sessionId };
   }
   if (event.event === 'step_update') {
     const update = event.step_update ?? {};
@@ -88,10 +95,15 @@ export default adapter({
     return { ok: true, models, version: version.stdoutTail.trim(),
       warnings: models.some(entry => entry.defaultEffort === 'default') ? ['Unqualified model IDs use the CLI default effort.'] : [] };
   },
-  buildArgs({ model: name, permission, prompt, schemaPath, sessionId }) {
-    const args = ['--model', name, '--mode', permission === 'write' ? 'accept-edits' : 'plan',
+  buildArgs({ model: name, permission, prompt, schemaPath, sessionId, addDirs = [] }) {
+    // auto = accept edits and run commands; accept-edits refuses every command, which kills any
+    // step whose job is 'implement it and run the tests'.
+    const args = ['--model', name, '--mode', permission === 'write' ? 'auto' : 'plan',
       '--input-format', 'stream-json', '--output-format', 'stream-json'];
     if (schemaPath) args.push('--json-schema', schemaPath);
+    // A write run may still not read outside its working directory, and artifacts live in the
+    // state directory, so hand them over explicitly instead of letting every handoff fail silently.
+    for (const dir of addDirs) if (typeof dir === 'string' && dir) args.push('--add-dir', dir);
     if (sessionId && sessionIdPattern.test(sessionId)) args.push('--resume', sessionId);
     return { args, stdin: JSON.stringify({ event: 'user', message: { content: prompt } }) + '\n' };
   },

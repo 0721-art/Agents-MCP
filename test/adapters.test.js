@@ -47,11 +47,17 @@ test('Antigravity stream events yield the final answer and session', () => {
   assert.deepEqual(stream('{"event":"result","result":{"conversation_id":"c1","status":"SUCCESS","response":"OK\\n"}}'),
     { type: 'result', text: 'OK\n', sessionId: 'c1' });
   assert.equal(stream('{"event":"result","result":{"status":"ERROR","response":"boom"}}').type, 'error');
-  assert.deepEqual(stream('{"event":"result","result":{"status":"ERROR","response":""}}').text, 'ERROR');
+  assert.deepEqual(stream('{"event":"result","result":{"status":"ERROR","response":""}}').text, 'Antigravity reported ERROR.');
   assert.deepEqual(stream('{"event":"result","result":{"status":"ERROR","error":{"message":"quota"}}}').text, 'quota');
+  const refused = stream('{"event":"result","result":{"status":"SUCCESS","response":"","denied_actions":[{"action":"read_file","display_name":"ReadFile"}]}}');
+  assert.deepEqual([refused.type, refused.text], ['error', 'Antigravity finished without an answer. It was refused: read_file.']);
   assert.equal(stream('{"event":"init","conversation_id":"--model"}').sessionId, undefined);
   assert.deepEqual(agy.resumeArgs({ model: 'neon-low', sessionId: '-rf' }).args.includes('--resume'), false);
   assert.deepEqual(agy.resumeArgs({ model: 'neon-low', sessionId: 'c1' }).args.slice(-2), ['--resume', 'c1']);
+  // A sandboxed write run can only read its working directory, so artifacts are added explicitly.
+  const routed = agy.buildArgs({ model: 'neon-low', permission: 'write', prompt: 'x', addDirs: ['C:\\state\\artifacts', ''] }).args;
+  assert.deepEqual(routed.slice(routed.indexOf('--add-dir'), routed.indexOf('--add-dir') + 2), ['--add-dir', 'C:\\state\\artifacts']);
+  assert.equal(routed.filter(arg => arg === '--add-dir').length, 1);
 });
 
 test('reasoning text and thinking tokens survive every stream shape in use', () => {

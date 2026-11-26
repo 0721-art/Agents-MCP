@@ -140,7 +140,8 @@ export async function createService({ stateDir, env = process.env, cwd = process
             await store.writeText(promptPath, safePrompt);
           }
           const options = { ...actor, cwd: target, permission: actor.writes ? 'write' : 'read',
-            prompt: safePrompt, promptPath, schemaPath, sessionId, env: childEnv };
+            prompt: safePrompt, promptPath, schemaPath, sessionId, env: childEnv,
+            addDirs: [join(root, 'artifacts')] };
           spec = sessionId && adapter.resumeArgs ? adapter.resumeArgs(options) : adapter.buildArgs(options);
           outcome = await run({ ...spec, exe: info.exe, cwd: target, env: { ...childEnv, ...spec.env }, signal: controller.signal,
             argvPrompt: spec.args.includes(safePrompt),

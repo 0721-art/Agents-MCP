@@ -19,11 +19,20 @@ export function createRegistry({ store, config, env }) {
   let generation = 0;
   const adapters = [codex, agy, claude, dsh, pi, omp, grok];
 
+  // A CLI that reaches the network through a proxy needs it as env vars; the panel's proxy
+  // setting is the one place a user configures that, so every agent inherits it.
+  function proxyEnv() {
+    const value = config().proxy;
+    if (!value) return {};
+    const url = /^https?:\/\//i.test(value) ? value : 'http://' + value;
+    return { HTTP_PROXY: url, HTTPS_PROXY: url, http_proxy: url, https_proxy: url };
+  }
+
   async function detect(spec, settings) {
     const base = { id: spec.id, name: spec.name, available: false, models: [], warnings: [], probedAt: new Date().toISOString() };
     const overrides = Object.hasOwn(settings.agents, spec.id) ? settings.agents[spec.id] : {};
     const remedy = 'Install the CLI or set its executable override, then refresh.';
-    const agentEnv = { ...env, ...spec.env({ env }), ...overrides.env };
+    const agentEnv = { ...env, ...proxyEnv(), ...spec.env({ env }), ...overrides.env };
     if (overrides.disabled) return { ...base, reason: 'Disabled in settings.', remedy: 'Enable the agent in settings.' };
     const signal = AbortSignal.timeout(15_000);
     let location;
@@ -100,7 +109,7 @@ export function createRegistry({ store, config, env }) {
       if (!selected.efforts.includes(effort)) throw problem('E_EFFORT', 'Unsupported effort ' + effort + ' for ' + model + '.',
         'Choose one of: ' + selected.efforts.join(', '));
       const spec = [...adapters, fixture].find(entry => entry.id === agent);
-      return { info, adapter: spec, env: { ...env, ...spec.env({ env }), ...config().agents[agent]?.env } };
+      return { info, adapter: spec, env: { ...env, ...proxyEnv(), ...spec.env({ env }), ...config().agents[agent]?.env } };
     },
   };
 }

@@ -161,7 +161,9 @@ export async function executeFlow(ctx, flow, plan) {
     const actor = participants.get(step.participant);
     const inputs = [...ancestors(id, deps)].flatMap(parent => artifacts.get(parent) ?? [])
       .filter(entry => !step.inputs?.length || step.inputs.includes(entry.name));
-    const attachments = inputs.map(entry => entry.path + '\n' + entry.summary).join('\n\n');
+    // The text travels with the prompt: a sandboxed agent may only read inside its working
+    // directory, and a handoff it cannot read is a handoff that never happened.
+    const attachments = inputs.map(entry => '### ' + entry.name + ' — ' + entry.path + '\n' + entry.text).join('\n\n');
     const prompt = ['Task:\n' + flow.task, 'Step:\n' + step.task, 'Role: ' + (actor.role || actor.id),
       actor.responsibility && 'Responsibility:\n' + actor.responsibility, attachments && 'Upstream artifacts:\n' + attachments,
       feedback.get(id) && 'Reviewer feedback:\n' + feedback.get(id),
@@ -176,7 +178,8 @@ export async function executeFlow(ctx, flow, plan) {
       const entries = [];
       for (const name of step.produces ?? []) {
         const path = await ctx.artifact(id + '-' + name + '.md', final.answer);
-        entries.push({ name, path, summary: final.answer.replace(/\s+/g, ' ').slice(0, 180) });
+        entries.push({ name, path, text: final.answer.slice(0, 24_000) + (final.answer.length > 24_000 ? '\n\n…(truncated)' : ''),
+          summary: final.answer.replace(/\s+/g, ' ').slice(0, 180) });
       }
       artifacts.set(id, entries);
     }
