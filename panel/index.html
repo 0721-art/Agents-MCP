@@ -8,95 +8,428 @@
   <script type="module" src="/panel.js"></script>
 </head>
 <body>
-  <header class="masthead">
-    <div class="identity"><span class="mark" aria-hidden="true">A</span><div><h1>Agents-MCP</h1><p>本机 Agent 控制台</p></div></div>
-    <div class="masthead-actions">
-      <button id="mcp-switch" class="switch on" type="button" aria-pressed="true" title="停用后所有 agent 的 agents_* 调用都会被拒绝">Agents-MCP 已启用</button>
-      <span class="local"><i></i> 本地服务</span>
+  <header class="appbar">
+    <div class="appbar-left">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">A</span>
+        <div class="brand-text">
+          <span class="brand-title">Agents-MCP</span>
+          <span class="brand-sub">本机 Agent 控制台</span>
+        </div>
+      </div>
+      <span class="appbar-sep" aria-hidden="true"></span>
+      <span class="service-pill" title="服务仅监听本机回环地址">
+        <span class="service-dot" aria-hidden="true"></span>
+        <span class="mono" data-slot="addr">127.0.0.1</span>
+        <span class="service-label">本地服务</span>
+      </span>
+      <span class="appbar-ver mono" data-slot="version" hidden></span>
+    </div>
+    <div class="appbar-right">
+      <button type="button" class="update-chip" data-slot="update-chip" hidden></button>
+      <button id="mcp-switch" class="mcp-switch on" type="button" aria-pressed="true" title="停用后所有 agent 的 agents_* 调用都会被拒绝">Agents-MCP 已启用</button>
     </div>
   </header>
-  <main>
-    <section id="gate" class="gate" aria-label="任务授权" aria-live="polite" hidden></section>
-    <section id="update" class="update" aria-live="polite" hidden></section>
-    <nav class="tabs" aria-label="控制台页面">
-      <button data-tab="agents" aria-current="page">Agents</button>
-      <button data-tab="flow">模式 A · 编排</button>
-      <button data-tab="delegate">模式 B · 委派</button>
-      <button data-tab="runs">运行记录</button>
-      <button data-tab="settings">设置</button>
+
+  <div class="shell">
+    <nav class="sidebar" aria-label="控制台页面">
+      <div class="sidebar-group">
+        <p class="sidebar-heading">控制台</p>
+        <button type="button" class="nav-item" data-tab="agents" aria-controls="agents" aria-current="page">
+          <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"></rect>
+            <rect x="9" y="2.5" width="4.5" height="4.5" rx="1"></rect>
+            <rect x="2.5" y="9" width="4.5" height="4.5" rx="1"></rect>
+            <rect x="9" y="9" width="4.5" height="4.5" rx="1"></rect>
+          </svg>
+          <span class="nav-label">Agents</span>
+        </button>
+        <button type="button" class="nav-item" data-tab="flow" aria-controls="flow">
+          <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="3.5" cy="4" r="1.8"></circle>
+            <circle cx="12.5" cy="4" r="1.8"></circle>
+            <circle cx="8" cy="12" r="1.8"></circle>
+            <path d="M5.3 4h5.4M4.5 5.6 7 10.4M11.5 5.6 9 10.4"></path>
+          </svg>
+          <span class="nav-label">模式 A · 编排</span>
+        </button>
+        <button type="button" class="nav-item" data-tab="delegate" aria-controls="delegate">
+          <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="3.2" r="1.8"></circle>
+            <circle cx="3.2" cy="12.5" r="1.6"></circle>
+            <circle cx="8" cy="12.5" r="1.6"></circle>
+            <circle cx="12.8" cy="12.5" r="1.6"></circle>
+            <path d="M8 5v5.9M8 7.6 3.8 11M8 7.6 12.2 11"></path>
+          </svg>
+          <span class="nav-label">模式 B · 委派</span>
+        </button>
+        <button type="button" class="nav-item" data-tab="runs" aria-controls="runs">
+          <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="5.5"></circle>
+            <path d="M8 5v3.2l2.2 1.4"></path>
+          </svg>
+          <span class="nav-label">运行记录</span>
+          <span class="nav-badge mono" data-slot="runs-badge" hidden></span>
+        </button>
+        <button type="button" class="nav-item" data-tab="settings" aria-controls="settings">
+          <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="2.2"></circle>
+            <path d="M8 2.2v1.6M8 12.2v1.6M2.2 8h1.6M12.2 8h1.6M3.9 3.9l1.1 1.1M11 11l1.1 1.1M12.1 3.9 11 5M5 11l-1.1 1.1"></path>
+          </svg>
+          <span class="nav-label">设置</span>
+        </button>
+      </div>
+      <div class="sidebar-foot">
+        <span class="sidebar-note"><span class="service-dot" aria-hidden="true"></span>仅限本机回环访问</span>
+      </div>
     </nav>
-    <p id="message" aria-live="polite" hidden></p>
-    <section id="agents" class="page">
-      <div class="page-heading"><h2>本机 Agents</h2><button id="refresh" class="primary">重新检测</button></div>
-      <div id="agent-list" class="agent-list"><p>正在读取 Agent…</p></div>
-    </section>
-    <section id="flow" class="page" hidden>
-      <div class="page-heading"><h2>流程编排</h2><div class="actions"><button id="validate">验证流程</button><button id="start-flow" class="primary">启动流程</button></div></div>
-      <div class="box fields preset-fields">
-        <label>预设<select id="flow-preset"></select></label>
-        <div class="actions"><button id="flow-preset-load" type="button">载入</button><button id="flow-preset-save" type="button">保存当前为预设</button></div>
+
+    <main class="content">
+      <div class="alerts">
+        <section id="gate" class="banner banner-warn gate" aria-label="任务授权" aria-live="polite" hidden></section>
+        <section id="update" class="banner banner-ok update" aria-label="版本更新" aria-live="polite" hidden></section>
+        <p id="message" class="notice" aria-live="polite" hidden></p>
       </div>
-      <div class="box fields task-fields">
-        <label>任务<textarea id="flow-task" rows="3" placeholder="希望这个流程完成什么？"></textarea></label>
-        <label>工作目录<div class="picker"><input id="flow-cwd" placeholder="默认使用服务启动目录"><button id="flow-cwd-pick" type="button">浏览…</button></div></label>
-      </div>
-      <div class="box"><div class="subheading"><h3>参与者</h3><button id="add-person">添加参与者</button></div><div id="draft-actor" class="fields"></div><div id="people"></div></div>
-      <div class="box"><div class="subheading"><h3>步骤</h3><button id="add-step">添加步骤</button></div><div id="steps"></div></div>
-      <div class="box"><div class="subheading"><h3>评审循环</h3><button id="add-loop">添加循环</button></div><div id="loops"></div></div>
-    </section>
-    <section id="delegate" class="page" hidden>
-      <div class="page-heading"><h2>主 Agent 委派</h2><button id="start-delegate" class="primary">启动委派</button></div>
-      <div class="box fields task-fields">
-        <label>任务<textarea id="delegate-task" rows="3" placeholder="交给主 Agent 的任务"></textarea></label>
-        <label>工作目录<div class="picker"><input id="delegate-cwd" placeholder="默认使用服务启动目录"><button id="delegate-cwd-pick" type="button">浏览…</button></div></label>
-      </div>
-      <div class="box"><h3>主 Agent</h3><div id="main-actor"></div><label class="check"><input id="delegate-writes" type="checkbox">允许参与委派的 Agent 请求写入</label></div>
-      <div class="box"><h3>委派上限</h3><div class="fields caps" id="caps"></div></div>
-      <div class="box"><div class="subheading"><h3>Agent 专长</h3><button id="save-strengths">保存专长</button></div><div id="strengths"></div></div>
-    </section>
-    <section id="runs" class="page" hidden>
-      <div class="page-heading"><h2>运行记录</h2><button id="refresh-runs">刷新</button></div>
-      <div class="run-layout"><div id="run-list" class="box"></div><div id="run-detail" class="box"><p>选择一条运行记录。</p></div></div>
-    </section>
-    <section id="settings" class="page" hidden>
-      <div class="page-heading"><h2>服务设置</h2><div class="actions"><button id="check-update">检查更新</button><button id="save-settings" class="primary">保存设置</button></div></div>
-      <div class="box fields settings-fields">
-        <label>任务授权<select id="policy"><option value="ask-once">每个任务询问一次</option><option value="auto-enable">自动启用</option><option value="deny">拒绝所有任务</option></select></label>
-        <label class="check"><input id="enable-a" type="checkbox">启用模式 A</label>
-        <label class="check"><input id="enable-b" type="checkbox">启用模式 B</label>
-        <label class="check"><input id="draft-gate" type="checkbox">生成职责也需要授权</label>
-        <label>服务端口<input id="port" type="number" min="0" max="65535"><small>重启后生效</small></label>
-        <label>版本<input id="version" readonly></label>
-        <label>默认步骤超时（分钟）<input id="step-timeout" type="number" min="1" max="1440"></label>
-        <label>默认并发<input id="parallel" type="number" min="1" max="32"></label>
-        <label class="wide">状态目录<input id="state-dir" readonly><small id="state-note">通过启动参数 --state-dir 更改</small></label>
-        <label class="wide">更新检查代理<input id="proxy" placeholder="127.0.0.1:7892"><small>可选，填写代理的 host:port。留空则直连，并读取 HTTPS_PROXY 环境变量。</small></label>
-      </div>
-      <div class="box">
-        <h3>接入状态</h3>
-        <div id="bridges" class="health"></div>
-        <div class="actions">
-          <button id="check-bridges">重新检测</button>
+
+      <section id="agents" class="page">
+        <div class="page-head">
+          <div class="page-title">
+            <h1>Agents</h1>
+            <p class="page-sub">本机已安装、可供编排与委派的 CLI 运行环境</p>
+          </div>
+          <div class="head-actions">
+            <button id="refresh" type="button" class="btn btn-primary">重新检测</button>
+          </div>
         </div>
-      </div>
-      <div class="box">
-        <h3>环境自检</h3>
-        <div id="health" class="health"></div>
-        <div class="actions">
-          <button id="check-health">重新检测</button>
+        <div id="agent-list" class="agent-list">
+          <div class="empty">
+            <p class="empty-title">正在读取 Agent…</p>
+            <p class="hint">正在扫描本机已安装的 CLI 与可用模型。</p>
+          </div>
         </div>
-      </div>
-      <div class="box fields">
-        <h3>桌面快捷方式</h3>
-        <label class="check"><input id="shortcut-startup" type="checkbox">同时开机自启</label>
-        <div class="actions">
-          <button id="install-shortcut" type="button">创建快捷方式</button>
-          <button id="remove-shortcut" type="button">删除快捷方式</button>
-          <button id="stop-service" type="button" class="danger">关闭服务</button>
+      </section>
+
+      <section id="flow" class="page" hidden>
+        <div class="page-head">
+          <div class="page-title">
+            <h1>模式 A · 编排</h1>
+            <p class="page-sub">按参与者与步骤依赖编排交接，支持评审循环回退</p>
+          </div>
+          <div class="head-actions">
+            <button id="validate" type="button" class="btn btn-ghost">验证流程</button>
+            <button id="start-flow" type="button" class="btn btn-primary">启动流程</button>
+          </div>
         </div>
-        <small>快捷方式指向当前程序；关闭服务后可以安全删除 exe。</small>
-      </div>
-    </section>
-  </main>
+
+        <figure id="flow-graph" class="card route" data-route="flow" aria-label="模式 A 编排路由预览">
+          <div class="route-head">
+            <div class="route-title-wrap">
+              <h2>Agent 路由预览</h2>
+              <span class="card-sub" data-route-summary>0 个参与者 · 0 条连线</span>
+            </div>
+            <div class="route-tools">
+              <button type="button" class="btn btn-ghost btn-sm" data-route-preview aria-pressed="false" hidden>预览流动</button>
+            </div>
+          </div>
+          <div class="route-body" data-route-body></div>
+          <figcaption class="route-legend" data-route-legend></figcaption>
+        </figure>
+
+        <div class="card">
+          <div class="preset-bar">
+            <div class="field preset-select">
+              <label for="flow-preset">预设</label>
+              <select id="flow-preset" class="control"></select>
+            </div>
+            <div class="actions">
+              <button id="flow-preset-load" type="button" class="btn">载入</button>
+              <button id="flow-preset-save" type="button" class="btn">保存当前为预设</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>任务目标</h2>
+            <span class="card-sub">所有步骤共享任务上下文与工作目录</span>
+          </div>
+          <div class="fields task-fields">
+            <div class="field">
+              <label for="flow-task">任务</label>
+              <textarea id="flow-task" class="control" rows="3" placeholder="希望这个流程完成什么？"></textarea>
+            </div>
+            <div class="field">
+              <label for="flow-cwd">工作目录</label>
+              <div class="picker">
+                <input id="flow-cwd" class="control mono" placeholder="默认使用服务启动目录">
+                <button id="flow-cwd-pick" type="button" class="btn">浏览…</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cols-2">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>参与者</h2>
+                <span class="card-sub">定义角色、模型与写入权限</span>
+              </div>
+              <button id="add-person" type="button" class="btn btn-sm">添加参与者</button>
+            </div>
+            <div id="draft-actor" class="fields draft-bar"></div>
+            <div id="people" class="stack"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>步骤</h2>
+                <span class="card-sub">配置执行顺序、依赖与产物传递</span>
+              </div>
+              <button id="add-step" type="button" class="btn btn-sm">添加步骤</button>
+            </div>
+            <div id="steps" class="stack"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>评审循环</h2>
+              <span class="card-sub">评审返回待修改时自动回退并重跑区间</span>
+            </div>
+            <button id="add-loop" type="button" class="btn btn-sm">添加循环</button>
+          </div>
+          <div id="loops" class="stack"></div>
+        </div>
+      </section>
+
+      <section id="delegate" class="page" hidden>
+        <div class="page-head">
+          <div class="page-title">
+            <h1>模式 B · 委派</h1>
+            <p class="page-sub">由主 Agent 自主拆解任务并动态委派给其他 Agent</p>
+          </div>
+          <div class="head-actions">
+            <button id="start-delegate" type="button" class="btn btn-primary">启动委派</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>任务目标</h2>
+            <span class="card-sub">主 Agent 将在此目录下协调子任务</span>
+          </div>
+          <div class="fields task-fields">
+            <div class="field">
+              <label for="delegate-task">任务</label>
+              <textarea id="delegate-task" class="control" rows="3" placeholder="交给主 Agent 的任务"></textarea>
+            </div>
+            <div class="field">
+              <label for="delegate-cwd">工作目录</label>
+              <div class="picker">
+                <input id="delegate-cwd" class="control mono" placeholder="默认使用服务启动目录">
+                <button id="delegate-cwd-pick" type="button" class="btn">浏览…</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cols-2">
+          <div class="card">
+            <div class="card-head">
+              <h2>主 Agent</h2>
+              <span class="card-sub">负责统筹、分发与汇总最终报告</span>
+            </div>
+            <div id="main-actor"></div>
+            <label class="check check-block" for="delegate-writes">
+              <input id="delegate-writes" type="checkbox">
+              <span>允许参与委派的 Agent 请求写入</span>
+            </label>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>委派上限</h2>
+              <span class="card-sub">限制深度、次数、并发与总时限</span>
+            </div>
+            <div class="fields caps" id="caps"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Agent 专长</h2>
+              <span class="card-sub">提供给主 Agent 的分工提示</span>
+            </div>
+            <button id="save-strengths" type="button" class="btn btn-sm">保存专长</button>
+          </div>
+          <div id="strengths" class="strengths-grid"></div>
+        </div>
+      </section>
+
+      <section id="runs" class="page" hidden>
+        <div class="page-head">
+          <div class="page-title">
+            <h1>运行记录</h1>
+            <p class="page-sub">每 1 秒自动刷新 · 详情包含路由图、步骤、思考过程与委派树</p>
+          </div>
+          <div class="head-actions">
+            <button id="refresh-runs" type="button" class="btn">刷新</button>
+          </div>
+        </div>
+        <div class="runs-layout">
+          <div id="run-list" class="card run-list-panel" aria-label="运行列表"></div>
+          <div id="run-detail" class="card run-detail-panel" aria-label="运行详情">
+            <div class="empty">
+              <p class="empty-title">选择一条运行记录</p>
+              <p class="hint">从左侧选择一条运行记录查看路由图、步骤与思考过程，或去模式 A 发起一次。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="settings" class="page" hidden>
+        <div class="page-head">
+          <div class="page-title">
+            <h1>设置</h1>
+            <p class="page-sub">任务授权策略、服务参数、客户端接入与环境诊断</p>
+          </div>
+          <div class="head-actions">
+            <button id="check-update" type="button" class="btn">检查更新</button>
+            <button id="save-settings" type="button" class="btn btn-primary">保存设置</button>
+          </div>
+        </div>
+
+        <div class="cols-2 settings-grid">
+          <div class="stack">
+            <div class="card">
+              <div class="card-head">
+                <h2>任务授权</h2>
+                <span class="card-sub">控制外部 MCP 与面板任务的执行确认</span>
+              </div>
+              <div class="fields settings-fields">
+                <div class="field wide">
+                  <label for="policy">授权策略</label>
+                  <select id="policy" class="control">
+                    <option value="ask-once">每个任务询问一次</option>
+                    <option value="auto-enable">自动启用</option>
+                    <option value="deny">拒绝所有任务</option>
+                  </select>
+                </div>
+                <label class="check" for="enable-a">
+                  <input id="enable-a" type="checkbox">
+                  <span>启用模式 A</span>
+                </label>
+                <label class="check" for="enable-b">
+                  <input id="enable-b" type="checkbox">
+                  <span>启用模式 B</span>
+                </label>
+                <label class="check wide" for="draft-gate">
+                  <input id="draft-gate" type="checkbox">
+                  <span>生成职责也需要授权</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <h2>服务参数</h2>
+                <span class="card-sub">端口、并发、超时与状态存储</span>
+              </div>
+              <div class="fields settings-fields">
+                <div class="field">
+                  <label for="port">服务端口</label>
+                  <input id="port" class="control mono" type="number" min="0" max="65535">
+                  <small class="hint">重启后生效</small>
+                </div>
+                <div class="field">
+                  <label for="version">版本</label>
+                  <input id="version" class="control mono" readonly>
+                </div>
+                <div class="field">
+                  <label for="step-timeout">默认步骤超时（分钟）</label>
+                  <input id="step-timeout" class="control mono" type="number" min="1" max="1440">
+                </div>
+                <div class="field">
+                  <label for="parallel">默认并发</label>
+                  <input id="parallel" class="control mono" type="number" min="1" max="32">
+                </div>
+                <div class="field wide">
+                  <label for="state-dir">状态目录</label>
+                  <input id="state-dir" class="control mono" readonly>
+                  <small id="state-note" class="hint">通过启动参数 --state-dir 更改</small>
+                </div>
+                <div class="field wide">
+                  <label for="proxy">更新检查代理</label>
+                  <input id="proxy" class="control mono" placeholder="127.0.0.1:7892">
+                  <small class="hint">可选，填写代理的 host:port。留空则直连，并读取 HTTPS_PROXY 环境变量。</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="stack">
+            <div class="card">
+              <div class="card-head">
+                <div>
+                  <h2>接入状态</h2>
+                  <span class="card-sub">本机 MCP 客户端配置与近期调用</span>
+                </div>
+                <button id="check-bridges" type="button" class="btn btn-sm">重新检测</button>
+              </div>
+              <div id="bridges" class="health"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <div>
+                  <h2>环境自检</h2>
+                  <span class="card-sub">目录写入权限、更新通道与运行时信息</span>
+                </div>
+                <button id="check-health" type="button" class="btn btn-sm">重新检测</button>
+              </div>
+              <div id="health" class="health"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <h2>桌面快捷方式与服务</h2>
+                <span class="card-sub">指向当前可执行程序</span>
+              </div>
+              <div class="stack">
+                <label class="check" for="shortcut-startup">
+                  <input id="shortcut-startup" type="checkbox">
+                  <span>同时开机自启</span>
+                </label>
+                <div class="actions">
+                  <button id="install-shortcut" type="button" class="btn">创建快捷方式</button>
+                  <button id="remove-shortcut" type="button" class="btn">删除快捷方式</button>
+                </div>
+                <div class="danger-zone">
+                  <div class="danger-copy">
+                    <p class="danger-title">停止本地服务</p>
+                    <small class="hint">快捷方式指向当前程序；关闭服务后可以安全删除 exe。</small>
+                  </div>
+                  <button id="stop-service" type="button" class="btn btn-danger">关闭服务</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template data-route-template>
+    <svg class="route-svg" aria-hidden="true">
+      <g class="route-edges"></g>
+      <g class="route-packets"></g>
+      <path class="route-edge-proto" d=""></path>
+      <circle class="route-port-proto" r="2.5"></circle>
+    </svg>
+  </template>
 </body>
 </html>

@@ -19,7 +19,7 @@
 | `src/proxy.js` | 更新检查与下载走 HTTP CONNECT 隧道（`http://` 代理只用于明文请求）：自己建立隧道并完成 TLS，因为 Node 的 fetch 不读系统代理设置。代理地址来自配置、`AGENTS_MCP_PROXY` 或 `HTTPS_PROXY`。 |
 | `src/assets.js` | 读取面板静态文件：开发目录直接读盘，单文件 exe 从内嵌资源读取。 |
 | `src/mcp/` | JSON-RPC 2.0、工具声明、逐行 stdio 与 Streamable HTTP。 |
-| `src/panel/server.js`、`src/panel/folder.js`、`panel/` | 回环监听、静态页面、同源 JSON API，以及用系统文件夹对话框选择工作目录。 |
+| `src/panel/server.js`、`src/panel/folder.js`、`panel/` | 回环监听、静态页面、同源 JSON API，以及用系统文件夹对话框选择工作目录。`panel/` 三个文件是唯一的界面资产（SEA 只嵌这三个），路由图用 `<template>` 里的静态 SVG 原型克隆路径，不出现命名空间字面量，几何只经 CSSOM/属性写入以符合 CSP。 |
 | `src/presets.js` | 读写状态目录里的 `presets.json`：校验、去重、同名覆盖，面板据此载入和保存模式 A 预设。 |
 | `src/registry/` | 定位 CLI、并行探测目录、缓存结果并返回可操作的健康提示。10 分钟内的缓存直接返回，过期缓存先应答再后台刷新，所以面板首屏不再等一次全量探测。 |
 | `src/runner/` | 安全启动进程、解析行事件、限制输出缓冲，处理超时和取消。 |
