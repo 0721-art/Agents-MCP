@@ -124,10 +124,16 @@ function renderUpdate() {
       const result = await api('/update/apply', 'POST', {});
       updateDismissed = true;
       renderUpdate();
-      message(result.restart || '已更新到最新版本，重启服务后生效。');
-      // The replaced binary restarts the service on the same port; wait for it, then
-      // reload so the panel talks to the new version.
-      if (result.restarting) setTimeout(() => window.location.reload(), 5000);
+      message(result.message || result.restart || '已更新到最新版本，重启服务后生效。');
+      if (result.restarting && result.restart === 'panel' && window.chrome?.webview) {
+        // The window host was replaced too, so it has to relaunch itself; it starts the new
+        // service and shows this same page again.
+        window.chrome.webview.postMessage('agents-mcp:restart');
+      } else if (result.restarting) {
+        // A service-only install restarts itself on the same port; wait, then reload so the
+        // panel talks to the new version.
+        setTimeout(() => window.location.reload(), 5000);
+      }
     }, 'primary')
     : button('打开发布页', async () => {
       window.open(updateInfo.url, '_blank', 'noopener');

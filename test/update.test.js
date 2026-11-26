@@ -9,7 +9,8 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import {
-  applyUpdate, checkForUpdate, cleanupInstall, installPending, isNewer, parseVersion, replaceExecutable, version,
+  applyUpdate, checkForUpdate, cleanupInstall, installPending, isNewer, parseVersion, replaceExecutable,
+  replaceExecutables, version,
 } from '../src/update.js';
 
 test('versions compare the way a user would expect', () => {
@@ -100,7 +101,7 @@ async function selfUpdateFixture(t, { bytes = 'new binary', digest } = {}) {
   const size = Buffer.byteLength(bytes);
   const asset = { name: 'Agents-MCP.exe', url: 'https://example.test/Agents-MCP.exe', size,
     digest: digest ?? 'sha256:' + createHash('sha256').update(bytes).digest('hex') };
-  await writeFile(join(dir, 'update-check.json'), JSON.stringify({ latest: 'v0.2.0', asset }) + '\n');
+  await writeFile(join(dir, 'update-check.json'), JSON.stringify({ latest: 'v0.2.0', assets: { service: asset } }) + '\n');
   const fetchImpl = async () => ({ ok: true, status: 200, body: Readable.toWeb(Readable.from([Buffer.from(bytes)])) });
   return { dir, target, fetchImpl };
 }
@@ -125,10 +126,42 @@ test('a release without an executable asset is refused instead of half-applied',
   t.after(() => rm(dir, { recursive: true, force: true }));
   const target = join(dir, 'Agents-MCP.exe');
   await writeFile(target, 'old binary');
-  await writeFile(join(dir, 'update-check.json'), JSON.stringify({ latest: 'v0.2.0', asset: null }) + '\n');
+  await writeFile(join(dir, 'update-check.json'), JSON.stringify({ latest: 'v0.2.0', assets: { service: null } }) + '\n');
   await assert.rejects(replaceExecutable({ stateDir: dir, target, fetchImpl: async () => { throw new Error('no network'); } }),
     error => error.code === 'E_NO_ASSET');
   assert.equal(await readFile(target, 'utf8'), 'old binary');
+});
+
+test('both executables are replaced in one update, and the window owns the restart', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'agents-mcp-swap-two-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const servicePath = join(dir, 'Agents-MCP.exe');
+  const panelPath = join(dir, 'Agents-MCP.Panel.exe');
+  await writeFile(servicePath, 'old service');
+  await writeFile(panelPath, 'old panel');
+  const files = { 'Agents-MCP.exe': 'new service', 'Agents-MCP.Panel.exe': 'new panel' };
+  const asset = name => ({ name, url: 'https://example.test/' + name, size: Buffer.byteLength(files[name]),
+    digest: 'sha256:' + createHash('sha256').update(files[name]).digest('hex') });
+  await writeFile(join(dir, 'update-check.json'), JSON.stringify({
+    latest: 'v0.2.0',
+    assets: { service: asset('Agents-MCP.exe'), panel: asset('Agents-MCP.Panel.exe') },
+  }) + '\n');
+  const fetchImpl = async url => ({ ok: true, status: 200,
+    body: Readable.toWeb(Readable.from([Buffer.from(files[url.split('/').pop()])])) });
+  const result = await replaceExecutables({ stateDir: dir, fetchImpl,
+    targets: [{ role: 'panel', path: panelPath }, { role: 'service', path: servicePath }] });
+  assert.equal(result.restart, 'panel');
+  assert.equal(result.files.length, 2);
+  assert.equal(await readFile(servicePath, 'utf8'), 'new service');
+  assert.equal(await readFile(panelPath, 'utf8'), 'new panel');
+  assert.equal(await readFile(servicePath + '.old', 'utf8'), 'old service');
+});
+
+test('a release that ships only the service updates the service and leaves the window alone', async t => {
+  const { dir, target, fetchImpl } = await selfUpdateFixture(t);
+  const result = await replaceExecutables({ stateDir: dir, fetchImpl, targets: [{ role: 'service', path: target }] });
+  assert.equal(result.restart, 'launcher');
+  assert.equal(await readFile(target, 'utf8'), 'new binary');
 });
 
 test('a swap refused by the folder is retried on the next launch', async t => {

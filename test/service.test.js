@@ -52,7 +52,7 @@ test('the update route restarts the service only after answering', async t => {
     getConfig: async () => ({ port: 0 }), presets: async () => [], listRuns: async () => [],
     pending: async () => [], listAgents: async () => [], redact: value => value,
     update: async () => ({ current: '0.1.0', latest: 'v0.2.0', newer: true }),
-    applyUpdate: async () => ({ ok: true, restarting: true, version: 'v0.2.0' }),
+    applyUpdate: async () => ({ ok: true, restarting: true, version: 'v0.2.0', restart: 'launcher' }),
   };
   const http = await createHttp(fake, { port: 0, onUpdate: () => { restarted += 1; } });
   t.after(() => new Promise(resolve => http.close(resolve)));
@@ -73,6 +73,26 @@ test('the update route restarts the service only after answering', async t => {
   assert.equal(body.restarting, true);
   await delay(50);
   assert.equal(restarted, 1, 'the restart hook runs after the response is finished');
+});
+
+test('an update that also replaces the window leaves the restart to that window', async t => {
+  let restarted = 0;
+  const fake = {
+    getConfig: async () => ({ port: 0 }), presets: async () => [], listRuns: async () => [],
+    pending: async () => [], listAgents: async () => [], redact: value => value,
+    update: async () => ({ current: '0.1.0', latest: 'v0.2.0', newer: true }),
+    applyUpdate: async () => ({ ok: true, restarting: true, version: 'v0.2.0', restart: 'panel' }),
+  };
+  const http = await createHttp(fake, { port: 0, onUpdate: () => { restarted += 1; } });
+  t.after(() => new Promise(resolve => http.close(resolve)));
+  const response = await fetch('http://127.0.0.1:' + http.address().port + '/api/update/apply', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.restart, 'panel');
+  await delay(50);
+  assert.equal(restarted, 0, 'the window restarts itself instead of the service');
 });
 
 test('the panel can ask what this machine can actually do', async t => {

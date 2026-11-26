@@ -88,7 +88,11 @@ export async function createHttp(service, { port = service.getConfig().port, onS
           await value();
           const applied = await service.applyUpdate();
           // A replaced binary only takes effect after a restart; answer first, then exit.
-          if (applied?.restarting && onUpdate) res.on('finish', () => { try { onUpdate(); } catch { /* already stopping */ } });
+          // The window host restarts itself when it was updated; only a service-only
+          // install needs this process to hand over to the new binary.
+          if (applied?.restarting && applied.restart === 'launcher' && onUpdate) {
+            res.on('finish', () => { try { onUpdate(); } catch { /* already stopping */ } });
+          }
           return applied;
         },
         'POST /api/delegate': async () => service.delegate(await value()),

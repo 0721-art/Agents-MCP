@@ -43,8 +43,26 @@ internal static class Program
         }
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new PanelForm(service, portArg, stateDirArg, browser));
+        // A swap that a previous run could not finish is retried here, before the window
+        // opens, so a read-only install folder still lands on the new version.
+        InstallPending();
+        Application.Run(new PanelForm(service, portArg, stateDirArg, browser, args));
         return 0;
+    }
+
+    private static void InstallPending()
+    {
+        string exe = Application.ExecutablePath;
+        string staged = exe + ".new";
+        string backup = exe + ".old";
+        try { if (File.Exists(backup)) File.Delete(backup); } catch { }
+        if (!File.Exists(staged)) return;
+        try
+        {
+            File.Move(exe, backup);
+            File.Move(staged, exe);
+        }
+        catch { /* still mapped, or the folder refuses the rename: try again next start */ }
     }
 
     private static string? Option(string[] args, string name)
@@ -61,6 +79,7 @@ internal static class Program
         private readonly string? portArg;
         private readonly string? stateDirArg;
         private readonly bool browser;
+        private readonly string[] argv;
         private readonly WebView2 web = new() { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.White };
         private readonly Label status = new()
         {
@@ -71,8 +90,9 @@ internal static class Program
         private int port;
         private bool quitting;
 
-        public PanelForm(string service, string? portArg, string? stateDirArg, bool browser)
+        public PanelForm(string service, string? portArg, string? stateDirArg, bool browser, string[] argv)
         {
+            this.argv = argv;
             this.service = service;
             this.portArg = portArg;
             this.stateDirArg = stateDirArg;
@@ -190,6 +210,12 @@ internal static class Program
             await web.EnsureCoreWebView2Async(environment);
             web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             web.CoreWebView2.Settings.IsStatusBarEnabled = false;
+            web.CoreWebView2.WebMessageReceived += async (_, e) =>
+            {
+                // The page asks for this after it replaced both executables; only the window
+                // can relaunch them, since it owns the service process.
+                if (e.TryGetWebMessageAsString() == "agents-mcp:restart") await RestartAsync();
+            };
             web.CoreWebView2.NewWindowRequested += (_, e) =>
             {
                 // Links to GitHub and the like belong in the browser, not in a second panel.
@@ -206,17 +232,41 @@ internal static class Program
             web.CoreWebView2.Navigate("http://127.0.0.1:" + port + "/");
         }
 
+        private async Task RestartAsync()
+        {
+            if (quitting) return;
+            quitting = true;
+            status.Text = "正在重启到新版本…";
+            await StopService();
+            try
+            {
+                Process.Start(new ProcessStartInfo(Application.ExecutablePath, string.Join(' ', argv.Select(Quote)))
+                {
+                    UseShellExecute = false, WorkingDirectory = AppContext.BaseDirectory,
+                });
+            }
+            catch (Exception error) { status.Text = "无法重新打开窗口：" + error.Message; return; }
+            Close();
+        }
+
+        private async Task StopService()
+        {
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+                await http.PostAsync("http://127.0.0.1:" + port + "/api/shutdown",
+                    new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+            }
+            catch { }
+            try { if (child is { HasExited: false }) child.WaitForExit(5000); } catch { }
+            try { if (child is { HasExited: false }) child.Kill(entireProcessTree: true); } catch { }
+        }
+
         private async Task Shutdown()
         {
             if (quitting) return;
             quitting = true;
-            try
-            {
-                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-                await http.PostAsync("http://127.0.0.1:" + port + "/api/shutdown", new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
-            }
-            catch { }
-            try { if (child is { HasExited: false }) child.Kill(entireProcessTree: true); } catch { }
+            await StopService();
             Close();
         }
 
