@@ -26,6 +26,7 @@ export function createProtocol(service) {
     const success = result => ({ jsonrpc: '2.0', id, result });
     if (method === 'initialize') {
       if (typeof params?.protocolVersion !== 'string') return rpcError(id, -32602, 'protocolVersion is required');
+      await service.noteClient?.(params.clientInfo);
       return success({ protocolVersion: versions.includes(params.protocolVersion) ? params.protocolVersion : versions[0],
         capabilities: { tools: {}, logging: {} }, serverInfo: { name: 'agents', version } });
     }
@@ -46,6 +47,7 @@ export function createProtocol(service) {
     const progress = typeof progressToken === 'string' || typeof progressToken === 'number';
     const sendProgress = (count, text) => notify({ jsonrpc: '2.0', method: 'notifications/progress',
       params: { progressToken, progress: count, total: 2, message: text } });
+    await service.noteCall?.();
     if (progress) sendProgress(1, 'Processing request');
     try {
       const tool = tools.get(params.name);

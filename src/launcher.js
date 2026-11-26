@@ -85,14 +85,15 @@ export async function run(argv = process.argv.slice(2)) {
     port: { type: 'string' }, 'state-dir': { type: 'string' }, 'no-open': { type: 'boolean' },
     check: { type: 'boolean' }, help: { type: 'boolean' }, stop: { type: 'boolean' },
     install: { type: 'boolean' }, startup: { type: 'boolean' }, uninstall: { type: 'boolean' },
-    mcp: { type: 'string' }, selftest: { type: 'boolean' }, panel: { type: 'boolean' },
+    mcp: { type: 'string' }, selftest: { type: 'boolean' }, bridges: { type: 'boolean' }, panel: { type: 'boolean' },
   } });
   // Same flags as the Node CLI, so a tool that speaks MCP to bin/agents-mcp.js can point
   // at this executable instead and needs no Node on the machine.
-  if (values.mcp !== undefined || values.selftest) {
+  if (values.mcp !== undefined || values.selftest || values.bridges) {
     await serve({
       mcp: values.mcp ?? 'stdio', port: values.port, stateDir: values['state-dir'],
       panel: Boolean(values.panel), selftest: Boolean(values.selftest),
+      bridges: Boolean(values.bridges),
     });
     return;
   }
@@ -100,6 +101,7 @@ export async function run(argv = process.argv.slice(2)) {
     say('Usage: Agents-MCP [--port N] [--state-dir DIR] [--no-open] [--check]\n'
       + '       Agents-MCP --mcp=stdio|http [--panel] [--port N] [--state-dir DIR]   run as an MCP server\n'
       + '       Agents-MCP --selftest              probe every agent once and print the result\n'
+      + '       Agents-MCP --bridges               show where this MCP is wired in and whether it was used\n'
       + '       Agents-MCP --install [--startup]   create Desktop and Start Menu shortcuts\n'
       + '       Agents-MCP --uninstall             remove those shortcuts\n'
       + '       Agents-MCP --stop                  stop the service running on the configured port\n'

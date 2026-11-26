@@ -88,3 +88,4 @@ button.danger:hover { background: #fdeeee; }
 .health-label { flex: 0 0 7.5rem; color: var(--muted); }
 .health-value { flex: 1 1 auto; word-break: break-all; }
 .health-value.bad, .hint.bad { color: #b23b3b; }
+.health-value.good { color: #1f7a3f; font-weight: 600; }

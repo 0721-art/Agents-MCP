@@ -7,18 +7,27 @@ import { createHttp } from './panel/server.js';
 import { createService } from './server.js';
 
 export const serveOptions = {
-  panel: { type: 'boolean' }, port: { type: 'string' }, selftest: { type: 'boolean' },
+  panel: { type: 'boolean' }, port: { type: 'string' }, selftest: { type: 'boolean' }, bridges: { type: 'boolean' },
   mcp: { type: 'string', default: 'stdio' }, 'state-dir': { type: 'string' },
   // Accepted for parity with the packaged launcher: a CLI run never opens a browser.
   'no-open': { type: 'boolean' },
 };
 
-export async function serve({ mcp = 'stdio', port, stateDir, panel = false, selftest = false } = {}) {
+export async function serve({ mcp = 'stdio', port, stateDir, panel = false, selftest = false, bridges = false } = {}) {
   if (!['stdio', 'http'].includes(mcp)) throw problem('E_CLI', 'Expected --mcp=stdio or --mcp=http.');
   if (port !== undefined && (!/^\d+$/.test(port) || !integer(Number(port), 0, 65535))) {
     throw problem('E_CLI', 'Port must be an integer from 0 to 65535.');
   }
   const service = await createService({ stateDir });
+  if (bridges) {
+    for (const row of await service.bridges()) {
+      const state = row.connectedNow ? 'connected now' : row.enabled === false ? 'disabled' : row.configured ? 'registered' : 'not installed';
+      process.stdout.write(row.label + ' · ' + state + ' · ' + row.detail
+        + (row.lastSeen ? ' · last call ' + row.lastSeen : ' · never called') + '\n');
+    }
+    await service.close();
+    return {};
+  }
   if (selftest) {
     const agents = service.redact(await service.listAgents({ refresh: true }));
     for (const agent of agents) {

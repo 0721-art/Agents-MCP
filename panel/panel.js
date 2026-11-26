@@ -408,6 +408,40 @@ wire('validate', async () => {
 });
 wire('start-flow', () => launchRun('/flow/run', structuredClone(flow())));
 
+// "Is it on right now?" — the config says installed, the usage record says it has actually
+// connected and called a tool, which is the only honest answer mid-task.
+function ago(iso) {
+  if (!iso) return '从未';
+  const seconds = Math.round((Date.now() - Date.parse(iso)) / 1000);
+  if (seconds < 60) return '刚刚';
+  if (seconds < 3600) return Math.round(seconds / 60) + ' 分钟前';
+  if (seconds < 86400) return Math.round(seconds / 3600) + ' 小时前';
+  return Math.round(seconds / 86400) + ' 天前';
+}
+
+async function loadBridges() {
+  const report = $('bridges');
+  report.replaceChildren(el('p', '检测中…', 'hint'));
+  let rows;
+  try {
+    rows = await api('/bridges');
+  } catch (error) {
+    report.replaceChildren(el('p', error.message, 'hint bad'));
+    return;
+  }
+  const line = row => {
+    const item = el('div', '', 'health-row');
+    const state = row.connectedNow ? '使用中' : row.enabled === false ? '已停用' : row.configured ? '已注册' : '未接入';
+    const value = row.detail + ' · 最近调用 ' + ago(row.lastSeen) + (row.calls ? '（' + row.calls + ' 次）' : '');
+    item.append(el('span', row.label, 'health-label'),
+      el('span', state, 'health-value ' + (row.connectedNow ? 'good' : row.configured && row.enabled !== false ? '' : 'bad')),
+      el('span', value, 'health-value'));
+    return item;
+  };
+  report.replaceChildren(...rows.map(line),
+    el('p', '在 Codex 或 Claude Code 里让它调用任意 agents_* 工具，这一行会立刻变成「使用中」。', 'hint'));
+}
+
 // The problem report's loudest complaint was silence: failures without a reason. The panel
 // now states where state lives, which folders it can write, and whether the update route
 // can reach anything at all.
@@ -630,9 +664,10 @@ async function loadRun(id) {
 }
 wire('refresh-runs', loadRuns);
 
-loadAgents().then(renderSettings).then(loadHealth).catch(error => message(error.message, true));
+loadAgents().then(renderSettings).then(loadBridges).then(loadHealth).catch(error => message(error.message, true));
 loadPresets().catch(error => message(error.message, true));
 loadUpdate().catch(() => {});
+wire('check-bridges', () => loadBridges());
 wire('check-health', () => loadHealth());
 wire('check-update', async () => {
   updateDismissed = false;

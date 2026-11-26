@@ -3,7 +3,7 @@
 import { parseArgs } from 'node:util';
 import { serve, serveOptions } from '../src/cli.js';
 
-const usage = 'Usage: agents-mcp [--panel] [--mcp=stdio|http] [--port N] [--state-dir DIR] [--selftest]\n';
+const usage = 'Usage: agents-mcp [--panel] [--mcp=stdio|http] [--port N] [--state-dir DIR] [--selftest] [--bridges]\n';
 
 try {
   const { values } = parseArgs({ options: { ...serveOptions, help: { type: 'boolean' } } });
@@ -12,7 +12,7 @@ try {
   } else {
     await serve({
       mcp: values.mcp, port: values.port, stateDir: values['state-dir'],
-      panel: Boolean(values.panel), selftest: Boolean(values.selftest),
+      panel: Boolean(values.panel), selftest: Boolean(values.selftest), bridges: Boolean(values.bridges),
     });
   }
 } catch (error) {

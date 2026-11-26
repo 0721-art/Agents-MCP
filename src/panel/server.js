@@ -80,6 +80,7 @@ export async function createHttp(service, { port = service.getConfig().port, onS
         'GET /api/presets': () => service.presets(),
         'POST /api/presets': async () => service.savePreset(await value()),
         'GET /api/health': () => service.health(),
+        'GET /api/bridges': () => service.bridges(),
         'GET /api/update': () => service.update({ fresh: url.searchParams.get('fresh') === '1' }),
         'POST /api/update/apply': async () => {
           await value();

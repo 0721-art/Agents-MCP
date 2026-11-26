@@ -70,6 +70,13 @@
         <label class="wide">更新检查代理<input id="proxy" placeholder="127.0.0.1:7892"><small>可选，填写代理的 host:port。留空则直连，并读取 HTTPS_PROXY 环境变量。</small></label>
       </div>
       <div class="box">
+        <h3>接入状态</h3>
+        <div id="bridges" class="health"></div>
+        <div class="actions">
+          <button id="check-bridges">重新检测</button>
+        </div>
+      </div>
+      <div class="box">
         <h3>环境自检</h3>
         <div id="health" class="health"></div>
         <div class="actions">

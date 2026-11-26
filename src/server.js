@@ -4,6 +4,7 @@ import { configWith, defaults, identifier, object, problem } from './config.js';
 import { delegationCaps, executeDispatch } from './engine/dispatch.js';
 import { executeFlow, validateFlow } from './engine/flow.js';
 import { createGate } from './engine/gate.js';
+import { clientBridges, createUsage } from './bridges.js';
 import { environmentReport } from './diagnose.js';
 import { createStore, resolveStateDirectory } from './engine/store.js';
 import { createRegistry } from './registry/index.js';
@@ -31,6 +32,9 @@ function inside(root, path) {
 export async function createService({ stateDir, env = process.env, cwd = process.cwd() } = {}) {
   const resolved = await resolveStateDirectory({ dir: stateDir, env });
   const store = await createStore(resolved.dir, env);
+  const { writeFile } = await import('node:fs/promises');
+  const usage = createUsage(resolved.dir, { writeFile });
+  await usage.load();
   const configPath = join(store.dir, 'config.json');
   let config = configWith(defaults, await store.readJson(configPath, {}));
   let configWrites = Promise.resolve();
@@ -248,6 +252,29 @@ export async function createService({ stateDir, env = process.env, cwd = process
     deletePreset: id => deletePreset(store, id), getConfig: () => ({ ...config, stateDir: store.dir, stateFallback: resolved.fallback, version: version }),
     // The panel asks once on load and again only when the user presses 检查更新.
     health: () => environmentReport({ env, stateDir: store.dir, proxy: config.proxy }),
+    // Every client row is "configured" plus "actually talked to us", so the panel can say
+    // whether the MCP is live right now instead of only whether it was installed once.
+    bridges: async () => {
+      const rows = await clientBridges({ env });
+      const history = usage.snapshot();
+      const now = Date.now();
+      return rows.map(row => {
+        const seen = history[row.id];
+        const lastSeen = seen?.lastSeen ?? null;
+        return {
+          ...row,
+          lastSeen,
+          calls: seen?.calls ?? 0,
+          connectedNow: Boolean(lastSeen) && now - Date.parse(lastSeen) < 5 * 60 * 1000,
+        };
+      }).concat(Object.entries(history)
+        .filter(([id]) => !['codex', 'claude', 'dsh'].includes(id))
+        .map(([id, seen]) => ({ id, label: seen.name ?? id, configured: true, enabled: true,
+          detail: '通过 MCP 连入的其他客户端', lastSeen: seen.lastSeen, calls: seen.calls ?? 0,
+          connectedNow: Date.now() - Date.parse(seen.lastSeen) < 5 * 60 * 1000 })));
+    },
+    noteClient: info => usage.note(info),
+    noteCall: () => usage.noteCall(),
     update: ({ fresh = false } = {}) => checkForUpdate({ stateDir: store.dir, env, fresh, proxy: config.proxy }),
     applyUpdate: () => upgradeCheckout({ stateDir: store.dir, env, proxy: config.proxy }),
     setConfig: patch => updateConfig(() => patch),
