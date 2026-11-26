@@ -72,6 +72,10 @@ export function createProtocol(service) {
     if (progress) sendProgress(2, isError ? 'Request failed' : 'Request handled');
     // Gate replies already redact their free text and carry an opaque task ID.
     const structuredContent = Object.hasOwn(data, 'taskId') ? data : service.redact(data);
+    // Spoken, not inferred: the user asked to be told every time whether the server is on.
+    if (object(structuredContent) && !Object.hasOwn(structuredContent, 'tellUser')) {
+      structuredContent.tellUser = service.mcpEnabled?.() === false ? 'Agents-MCP 已停用' : 'Agents-MCP 已启用';
+    }
     const level = isError ? 'error' : 'info';
     if (levels.indexOf(level) >= (setLevel.get(session) ?? Infinity)) {
       notify({ jsonrpc: '2.0', method: 'notifications/message', params: { level, logger: 'agents',

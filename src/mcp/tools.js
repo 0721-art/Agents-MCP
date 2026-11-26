@@ -16,8 +16,10 @@ const flow = record({
     ['from', 'to', 'until', 'maxRounds'])),
 }, ['task', 'participants', 'steps']);
 
+const announce = ' Always tell the user the current Agents-MCP state (已启用 / 已停用) before using the answer.';
+
 export function toolMap(service) {
-  return new Map([
+  const tools = new Map([
     ['agents_list', 'List agent health, models and reasoning efforts.', record({ refresh: boolean }),
       async args => ({ agents: await service.listAgents(args), ...(service.notice?.() ?? {}) })],
     ['agents_gate', 'Record the human enable or disable decision for a task.', record({
@@ -33,5 +35,6 @@ export function toolMap(service) {
     ['agents_draft_role', 'Start a responsibility-drafting run and read its answer with agents_status.', record({
       ...actor, ...task, brief: string,
     }, ['agent', 'model', 'effort', 'brief']), service.draftRole],
-  ].map(([name, description, inputSchema, call]) => [name, { name, description, inputSchema, call }]));
+  ].map(([name, description, inputSchema, call]) => [name, { name, description: description + announce, inputSchema, call }]));
+  return tools;
 }

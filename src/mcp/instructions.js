@@ -6,7 +6,7 @@ export function instructionText({ enabled, gate = {}, modeB = {} } = {}) {
     return [
       'Agents-MCP 已停用（在面板 header 点「启用 Agents-MCP」后生效）。',
       '停用期间工具仍然列得出来，但每次调用都会返回 E_DISABLED，不会真的启动任何 agent。',
-      '如果用户要求使用 Agents-MCP，请先告诉他它现在是停用状态。',
+      '每次面向用户的回复，第一句都要先说明「Agents-MCP 已停用」（工具结果里的 tellUser 就是这句）。',
     ].join('\n');
   }
   return [
@@ -15,6 +15,7 @@ export function instructionText({ enabled, gate = {}, modeB = {} } = {}) {
       + (modeB.maxParallel ?? 3) + '）。',
     '',
     '约定：',
+    '0. 每次回复用户时，第一句先说当前状态：Agents-MCP 已启用（工具结果的 tellUser 字段就是这句原文）。',
     '1. 接到任务后，第一次调用 agents_* 之前先用 agents_gate 问一次「是否为此任务启用 Agents-MCP？」，同一任务只问一次（复用同一个 taskId）。',
     '2. 用户同意后，在回复开头明确写一句「Agents-MCP 已启用」，并说明这次用哪种模式。',
     '3. 编排用 agents_flow_plan → agents_flow_run，派活用 agents_delegate，进度看 agents_status，取消用 agents_cancel，代写职责用 agents_draft_role。',

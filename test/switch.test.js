@@ -78,3 +78,22 @@ test('the gate answer carries the sentence the agent repeats to the user', async
   assert.equal(answer.result.structuredContent.status, 'enabled');
   assert.match(answer.result.structuredContent.notice, /Agents-MCP 已启用/);
 });
+
+test('every answer carries the sentence the agent must say to the user', async t => {
+  const { service, rpc } = await setup(t);
+  const on = await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'agents_list' } });
+  assert.equal(on.result.structuredContent.tellUser, 'Agents-MCP 已启用');
+
+  await service.setConfig({ enabled: false });
+  const off = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'agents_list' } });
+  assert.equal(off.result.structuredContent.tellUser, 'Agents-MCP 已停用',
+    'the refusal says the same sentence, so the agent can still report the state');
+});
+
+test('the state is part of every tool description, not only the initialize handshake', async t => {
+  const { rpc } = await setup(t);
+  const listed = await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+  for (const tool of listed.result.tools) {
+    assert.match(tool.description, /tell the user the current Agents-MCP state/, tool.name);
+  }
+});
