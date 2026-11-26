@@ -1036,6 +1036,8 @@ function buildFlowRouting() {
 
   return {
     scope: 'flow',
+    nodeWidth: 214,
+    gapX: 96,
     nodes,
     edges: [...forwardEdges, ...loopEdges],
     fallbackOrder,
@@ -1241,10 +1243,10 @@ function layoutRouting(model, containerWidth) {
   const visibleEdges = model.edges.filter(e => visibleKeys.has(e.from) && visibleKeys.has(e.to));
 
   if (!visibleNodes.length) {
-    return { empty: true, compact: false, nodes: [], edges: [], omitted: 0, gw: 0, gh: 0 };
+    return { empty: true, compact: false, nodes: [], edges: [], omitted: 0, gw: 0, gh: 0, nodeW: NODE_W, nodeH: NODE_H };
   }
   if (containerWidth > 0 && containerWidth < 360) {
-    return { empty: false, compact: true, nodes: visibleNodes, edges: visibleEdges, omitted, gw: containerWidth, gh: 0 };
+    return { empty: false, compact: true, nodes: visibleNodes, edges: visibleEdges, omitted, gw: containerWidth, gh: 0, nodeW: NODE_W, nodeH: NODE_H };
   }
 
   const W = Math.max(360, containerWidth || 720);
@@ -1522,6 +1524,130 @@ function legendItem(kind, text) {
   return wrap;
 }
 
+// ── 协作动画 ────────────────────────────────────────────────────────────────
+// 参考 yetone/magpie 的做法：连线是流动的虚线，数据包是一颗带光晕的小圆点，
+// 每帧按真实路径取点移动（不是 CSS 补间，所以快慢、往返都能控制），颜色按上游
+// Agent 分配，同一张图里不同 Agent 不撞色；评审回环用空心点反向飞回上游。
+const ROUTE_PALETTE = ['#4c8df6', '#a06bf5', '#e5679a', '#e09a2b', '#2fae76', '#2ba8bd', '#e0685f', '#8aa93a'];
+const routeColourMaps = new WeakMap();
+const routeFlights = new WeakMap();
+
+function routeColour(figure, id) {
+  let map = routeColourMaps.get(figure);
+  if (!map) { map = new Map(); routeColourMaps.set(figure, map); }
+  let colour = map.get(id);
+  if (!colour) {
+    const used = new Set(map.values());
+    colour = ROUTE_PALETTE.find(c => !used.has(c)) ?? ROUTE_PALETTE[map.size % ROUTE_PALETTE.length];
+    map.set(id, colour);
+  }
+  return colour;
+}
+
+function routeAgentOf(node) {
+  const head = String(node.subtitle ?? '').split(' · ')[0].trim();
+  return head || String(node.title ?? '');
+}
+
+const routeStill = () => typeof window.matchMedia === 'function'
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const routeEase = t => (t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) * (-2 * t + 2)) / 2);
+
+function stopRouteFlights(figure) {
+  const flight = routeFlights.get(figure);
+  if (!flight) return;
+  if (flight.raf) cancelAnimationFrame(flight.raf);
+  flight.layer?.replaceChildren();
+  routeFlights.delete(figure);
+}
+
+function routeDot(colour, back, radius, className = 'route-fly') {
+  const dot = portProto.cloneNode(false);
+  dot.setAttribute('class', className);
+  dot.setAttribute('r', String(radius));
+  dot.setAttribute('opacity', '0');
+  dot.dataset.back = back ? '1' : '0';
+  dot.style.setProperty('--agent', colour);
+  return dot;
+}
+
+function syncRouteFlights(figure, state, layout, model) {
+  const layer = state.packetsLayer;
+  if (!layer) return;
+  const tracks = [];
+  const trails = [];
+  for (const edge of layout.edges) {
+    const ref = state.edgeRefs.get(edge.key);
+    if (!ref?.wire) continue;
+    const flowing = Boolean(edge.activePacket);
+    const back = edge.kind === 'loop' && !model.terminal;
+    if (!flowing && !back) {
+      if (edge.state === 'done') {
+        let trailLen = 0;
+        try { trailLen = ref.wire.getTotalLength(); } catch { trailLen = 0; }
+        if (trailLen) trails.push({ path: ref.wire, len: trailLen, colour: ref.wire.style.getPropertyValue('--agent') || 'var(--accent)', back: false });
+      }
+      continue;
+    }
+    let len = 0;
+    try { len = ref.wire.getTotalLength(); } catch { len = 0; }
+    if (!len) continue;
+    tracks.push({ path: ref.wire, len, colour: ref.wire.style.getPropertyValue('--agent') || 'var(--accent)', back });
+  }
+  const sig = tracks.map(t => (t.back ? 'b' : 'f') + Math.round(t.len) + t.colour).join('|') + '#' + layout.edges.filter(e => e.state === 'done').length;
+  const current = routeFlights.get(figure);
+  if (current && current.sig === sig && current.layer === layer) return;
+  stopRouteFlights(figure);
+  if (!tracks.length && !trails.length) return;
+
+  const flight = { layer, sig, tracks, trails, packets: [], raf: 0, last: 0 };
+  routeFlights.set(figure, flight);
+
+  // 站着不动的点：已走过的边（历史痕迹），以及"减少动态效果"时正在交接的边
+  const standing = routeStill() ? tracks.concat(trails) : trails;
+  for (const track of standing) {
+    for (const at of [0.36, 0.68]) {
+      const dot = routeDot(track.colour, track.back, 3, 'route-point');
+      dot.setAttribute('opacity', routeStill() ? '0.65' : '0.5');
+      const point = track.path.getPointAtLength(at * track.len);
+      dot.setAttribute('cx', point.x.toFixed(1));
+      dot.setAttribute('cy', point.y.toFixed(1));
+      layer.append(dot);
+    }
+  }
+  if (routeStill() || !tracks.length) return;
+
+  for (const track of tracks) {
+    for (let i = 0; i < 2; i++) {
+      const halo = routeDot(track.colour, track.back, track.back ? 9 : 10, 'route-halo');
+      const dot = routeDot(track.colour, track.back, track.back ? 4.6 : 5);
+      layer.append(halo, dot);
+      flight.packets.push({ dot, halo, track, t: i / 2, speed: 1 / (track.back ? 1700 : 1400) });
+    }
+  }
+
+  flight.last = performance.now();
+  const frame = now => {
+    const dt = Math.min(64, now - flight.last);
+    flight.last = now;
+    for (const packet of flight.packets) {
+      packet.t += dt * packet.speed;
+      if (packet.t >= 1) packet.t -= 1;
+      const at = (packet.track.back ? 1 - routeEase(packet.t) : routeEase(packet.t)) * packet.track.len;
+      const point = packet.track.path.getPointAtLength(at);
+      packet.dot.setAttribute('cx', point.x.toFixed(1));
+      packet.dot.setAttribute('cy', point.y.toFixed(1));
+      packet.halo.setAttribute('cx', point.x.toFixed(1));
+      packet.halo.setAttribute('cy', point.y.toFixed(1));
+      const fade = packet.t < 0.1 ? packet.t / 0.1 : packet.t > 0.9 ? (1 - packet.t) / 0.1 : 1;
+      packet.dot.setAttribute('opacity', fade.toFixed(2));
+      packet.halo.setAttribute('opacity', (fade * 0.85).toFixed(2));
+    }
+    flight.raf = requestAnimationFrame(frame);
+  };
+  flight.raf = requestAnimationFrame(frame);
+}
+
 function renderRouting(figure, model) {
   if (!figure || !svgProto) return;
   const body = figure.querySelector('[data-route-body]');
@@ -1531,11 +1657,16 @@ function renderRouting(figure, model) {
 
   let state = routeStateMap.get(figure);
   if (!state) {
-    state = { layoutSig: '', widthBucket: -1, nodeRefs: new Map(), edgeRefs: new Map(), lastModel: null };
+    state = { layoutSig: '', widthBucket: -1, nodeRefs: new Map(), edgeRefs: new Map(), lastModel: null, packetsLayer: null, colourScope: '', agents: new Map() };
     routeStateMap.set(figure, state);
     if (routeResizeObserver) routeResizeObserver.observe(body);
   }
   state.lastModel = model;
+  const colourScope = String(model.runId ?? model.scope ?? '');
+  if (state.colourScope !== colourScope) {
+    routeColourMaps.delete(figure);
+    state.colourScope = colourScope;
+  }
 
   const nodeCount = model.nodes.length;
   const edgeCount = model.edges.length;
@@ -1550,6 +1681,8 @@ function renderRouting(figure, model) {
 
   // Empty state
   if (!nodeCount) {
+    stopRouteFlights(figure);
+    state.packetsLayer = null;
     state.layoutSig = 'empty:' + model.scope;
     state.nodeRefs.clear();
     state.edgeRefs.clear();
@@ -1654,10 +1787,9 @@ function renderRouting(figure, model) {
       if (ref.wire.dataset.state !== edge.state) ref.wire.dataset.state = edge.state;
       if (ref.arrow.dataset.state !== edge.state) ref.arrow.dataset.state = edge.state;
       if (ref.port.dataset.state !== edge.state) ref.port.dataset.state = edge.state;
-      const runFlag = edge.activePacket ? '1' : '0';
-      if (ref.packet.dataset.run !== runFlag) ref.packet.dataset.run = runFlag;
       if (ref.label && ref.label.dataset.state !== edge.state) ref.label.dataset.state = edge.state;
     }
+    syncRouteFlights(figure, state, layout, model);
     return;
   }
 
@@ -1670,6 +1802,8 @@ function renderRouting(figure, model) {
   const canvas = group('route-canvas');
   canvas.style.setProperty('--gw', layout.gw + 'px');
   canvas.style.setProperty('--gh', layout.gh + 'px');
+  canvas.style.setProperty('--nw', (layout.nodeW ?? 164) + 'px');
+  canvas.style.setProperty('--nh', (layout.nodeH ?? 84) + 'px');
 
   const svg = svgProto.cloneNode(false);
   svg.setAttribute('viewBox', '0 0 ' + layout.gw + ' ' + layout.gh);
@@ -1682,32 +1816,32 @@ function renderRouting(figure, model) {
   const labelsLayer = group('route-labels');
   const nodesLayer = group('route-nodes');
 
+  // 每个节点先领一个颜色，连线沿用上游节点的颜色 —— 谁交给谁一眼能看出来。
+  const colourOf = new Map();
+  for (const node of layout.nodes) colourOf.set(node.key, routeColour(figure, routeAgentOf(node)));
+
   for (const edge of layout.edges) {
+    const colour = colourOf.get(edge.from) ?? routeColour(figure, edge.from);
     const wirePath = pathProto.cloneNode(false);
     wirePath.setAttribute('class', 'route-edge');
     wirePath.setAttribute('d', edge.d);
     wirePath.dataset.state = edge.state;
+    wirePath.style.setProperty('--agent', colour);
 
     const arrowPath = pathProto.cloneNode(false);
     arrowPath.setAttribute('class', 'route-arrow');
     arrowPath.setAttribute('d', edge.arrowD);
     arrowPath.dataset.state = edge.state;
+    arrowPath.style.setProperty('--agent', colour);
 
     const portDot = portProto.cloneNode(false);
     portDot.setAttribute('class', 'route-port');
     portDot.setAttribute('cx', edge.sx.toFixed(1));
     portDot.setAttribute('cy', edge.sy.toFixed(1));
     portDot.dataset.state = edge.state;
+    portDot.style.setProperty('--agent', colour);
 
     edgesLayer.append(wirePath, arrowPath, portDot);
-
-    const packetPath = pathProto.cloneNode(false);
-    packetPath.setAttribute('class', 'route-packet');
-    packetPath.setAttribute('d', edge.d);
-    packetPath.setAttribute('pathLength', '1');
-    packetPath.style.setProperty('--k', String(edge.k));
-    packetPath.dataset.run = edge.activePacket ? '1' : '0';
-    packetsLayer.append(packetPath);
 
     let labelEl = null;
     if (edge.label) {
@@ -1719,12 +1853,13 @@ function renderRouting(figure, model) {
       labelsLayer.append(labelEl);
     }
 
-    state.edgeRefs.set(edge.key, { wire: wirePath, arrow: arrowPath, port: portDot, packet: packetPath, label: labelEl });
+    state.edgeRefs.set(edge.key, { wire: wirePath, arrow: arrowPath, port: portDot, label: labelEl });
   }
 
   for (const node of layout.nodes) {
     const card = group('route-node');
     card.dataset.status = node.status;
+    card.style.setProperty('--agent', colourOf.get(node.key) ?? '');
     card.style.setProperty('--nx', node.x + 'px');
     card.style.setProperty('--ny', node.y + 'px');
 
@@ -1732,7 +1867,7 @@ function renderRouting(figure, model) {
     titleEl.title = node.title;
     const pill = el('span', node.pillText, 'pill');
     pill.dataset.tone = node.pillTone;
-    const subEl = el('span', node.subtitle, 'route-node-sub');
+    const subEl = group('route-node-sub', el('span', '', 'route-node-dot'), el('span', node.subtitle, 'route-node-subtext'));
     subEl.title = node.subtitle;
     const metaEl = el('span', node.meta, 'route-node-meta mono');
     metaEl.title = node.meta;
@@ -1745,6 +1880,8 @@ function renderRouting(figure, model) {
   canvas.append(svg, labelsLayer, nodesLayer);
   stage.append(canvas);
   body.replaceChildren(stage);
+  state.packetsLayer = packetsLayer;
+  syncRouteFlights(figure, state, layout, model);
 }
 
 function syncFlowPreviewToggle() {
