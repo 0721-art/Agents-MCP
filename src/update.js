@@ -5,6 +5,7 @@
 // hours in the state directory, so a panel that stays open costs nothing.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { proxyFetch, resolveProxy } from './proxy.js';
 import { createWriteStream, existsSync, readFileSync, rmSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -98,6 +99,14 @@ function pickAsset(body) {
 
 const checkout = () => !packaged && existsSync(join(checkoutRoot, '.git'));
 
+// Where the request leaves this machine: an explicit proxy wins over the environment, and
+// without either the built-in fetch is used unchanged.
+function transport({ env = process.env, proxy, fetchImpl } = {}) {
+  if (fetchImpl) return { send: fetchImpl, label: null };
+  const resolved = resolveProxy({ env, config: typeof proxy === 'string' ? { proxy } : undefined });
+  return resolved ? { send: proxyFetch(resolved), label: resolved.host } : { send: fetch, label: null };
+}
+
 const describe = (current, record, extra = {}) => ({
   current,
   latest: record.latest ?? null,
@@ -115,13 +124,19 @@ const describe = (current, record, extra = {}) => ({
 });
 
 export async function checkForUpdate({
-  stateDir, env = process.env, current = version, now = Date.now(), fetchImpl = fetch, timeoutMs = 5000, fresh = false,
+  stateDir, env = process.env, current = version, now = Date.now(), fetchImpl, proxy, timeoutMs = 5000, fresh = false,
 } = {}) {
   const cached = stateDir ? readCache(stateDir) : null;
   if (env.AGENTS_MCP_NO_UPDATE_CHECK) return describe(current, cached ?? {}, { disabled: true });
   if (!fresh && cached && now - (cached.checkedAt ?? 0) < cacheTtlMs) return describe(current, cached, { cached: true });
+  let via;
   try {
-    const response = await fetchImpl('https://api.github.com/repos/' + repository + '/releases/latest', {
+    via = transport({ env, proxy, fetchImpl });
+  } catch (error) {
+    return describe(current, cached ?? {}, { error: error?.message ?? 'the proxy address is not usable' });
+  }
+  try {
+    const response = await via.send('https://api.github.com/repos/' + repository + '/releases/latest', {
       headers: { accept: 'application/vnd.github+json', 'user-agent': 'agents-mcp/' + current },
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -136,9 +151,9 @@ export async function checkForUpdate({
       asset: pickAsset(body),
     };
     if (stateDir) writeCache(stateDir, record);
-    return describe(current, record);
+    return describe(current, record, { proxy: via.label });
   } catch (error) {
-    return describe(current, cached ?? {}, { error: error?.message ?? 'update check failed' });
+    return describe(current, cached ?? {}, { error: error?.message ?? 'update check failed', proxy: via.label });
   }
 }
 
@@ -168,7 +183,7 @@ function fail(code, message, remedy) {
 // file becomes `.old` and the fresh download takes its name. When even that is refused
 // (an install folder the user cannot write), the download is kept as `.new` and the
 // swap is retried on the next start.
-export async function replaceExecutable({ stateDir, env = process.env, fetchImpl = fetch, target = process.execPath, timeoutMs = 300_000 } = {}) {
+export async function replaceExecutable({ stateDir, env = process.env, fetchImpl, proxy, target = process.execPath, timeoutMs = 300_000 } = {}) {
   if (!target.toLowerCase().endsWith('.exe')) fail('E_NOT_PACKAGED', 'Only the packaged executable can replace itself.');
   const record = readCache(stateDir);
   const asset = record?.asset;
@@ -178,9 +193,10 @@ export async function replaceExecutable({ stateDir, env = process.env, fetchImpl
   }
   const staging = target + '.new';
   const backup = target + '.old';
+  const via = transport({ env, proxy, fetchImpl });
   let response;
   try {
-    response = await fetchImpl(asset.url, {
+    response = await via.send(asset.url, {
       headers: { 'user-agent': 'agents-mcp/' + (record?.latest ?? version) },
       redirect: 'follow',
       signal: AbortSignal.timeout(timeoutMs),
@@ -264,8 +280,8 @@ export function cleanupInstall({ target = process.execPath } = {}) {
   }
 }
 
-export async function applyUpdate({ stateDir, env = process.env, root = checkoutRoot, fetchImpl = fetch, ...rest } = {}) {
-  if (packaged) return replaceExecutable({ stateDir, env, fetchImpl, ...rest });
+export async function applyUpdate({ stateDir, env = process.env, root = checkoutRoot, fetchImpl, proxy, ...rest } = {}) {
+  if (packaged) return replaceExecutable({ stateDir, env, fetchImpl, proxy, ...rest });
   if (!existsSync(join(root, '.git'))) {
     fail('E_NOT_CHECKOUT', 'This copy was not installed from a git checkout, so it cannot update itself.',
       'Download the new release instead.');

@@ -148,6 +148,7 @@ async function loadUpdate(fresh = false) {
     updateInfo = await api('/update' + (fresh ? '?fresh=1' : ''));
     renderUpdate();
     // A failed check is not "up to date": say so only when the user asked for it.
+    if (fresh && updateInfo.proxy) message('已通过代理 ' + updateInfo.proxy + ' 检查更新。');
     if (fresh && updateInfo.error) message('检查更新失败：' + updateInfo.error, true);
     else if (fresh && !updateInfo.newer) message('已是当前最新版本 v' + updateInfo.current + '。');
   } catch (error) {
@@ -421,6 +422,7 @@ function renderSettings() {
     ? '默认目录 ' + config.stateFallback.from + ' 不可写（' + config.stateFallback.reason + '），已改用当前目录。用 --state-dir 可以固定下来。'
     : '通过启动参数 --state-dir 更改';
   $('version').value = config.version ?? '';
+  $('proxy').value = config.proxy ?? '';
   $('caps').replaceChildren(...Object.entries(caps).map(([key, label]) => {
     const value = capValues[key] ?? config.modeB[key];
     capValues[key] = value;
@@ -458,6 +460,7 @@ wire('save-settings', async () => {
   config = { ...config, ...await api('/config', 'PUT', {
     gate: { policy: $('policy').value, modeA: $('enable-a').checked, modeB: $('enable-b').checked, draftRoleRequiresGate: $('draft-gate').checked },
     port: $('port').valueAsNumber, stepTimeoutMinutes: $('step-timeout').valueAsNumber, maxParallel: $('parallel').valueAsNumber,
+    proxy: $('proxy').value.trim(),
   }) };
   renderSettings();
   message('设置已保存。');

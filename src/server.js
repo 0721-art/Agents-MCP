@@ -246,8 +246,8 @@ export async function createService({ stateDir, env = process.env, cwd = process
     savePreset: input => savePreset(store, input),
     deletePreset: id => deletePreset(store, id), getConfig: () => ({ ...config, stateDir: store.dir, stateFallback: resolved.fallback, version: version }),
     // The panel asks once on load and again only when the user presses 检查更新.
-    update: ({ fresh = false } = {}) => checkForUpdate({ stateDir: store.dir, env, fresh }),
-    applyUpdate: () => upgradeCheckout({ stateDir: store.dir, env }),
+    update: ({ fresh = false } = {}) => checkForUpdate({ stateDir: store.dir, env, fresh, proxy: config.proxy }),
+    applyUpdate: () => upgradeCheckout({ stateDir: store.dir, env, proxy: config.proxy }),
     setConfig: patch => updateConfig(() => patch),
     override(id, value) {
       if (!identifier(id) || !object(value)) throw problem('E_CONFIG', 'Invalid executable override.');

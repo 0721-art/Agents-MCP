@@ -10,6 +10,7 @@
 | `scripts/pack-zip.mjs` | 把 exe、使用说明与 LICENSE 打成 `dist/Agents-MCP-<版本>-win-x64.zip`。 |
 | `src/cli.js` | 源码入口与打包入口共用的启动逻辑：解析 `--panel/--mcp/--port/--state-dir/--selftest/--no-open`、打印自检表、按 stdio 或 HTTP 起服务。 |
 | `src/update.js` | 查最新 release（缓存 6 小时）、git checkout 走 `git pull --ff-only`，打包版则下载同名 exe、校验大小与 `sha256`、替换自身并重启；替换失败时保留 `.new` 待下次启动。 |
+| `src/proxy.js` | 更新检查与下载走 HTTP CONNECT 隧道（`http://` 代理只用于明文请求）：自己建立隧道并完成 TLS，因为 Node 的 fetch 不读系统代理设置。代理地址来自配置、`AGENTS_MCP_PROXY` 或 `HTTPS_PROXY`。 |
 | `src/assets.js` | 读取面板静态文件：开发目录直接读盘，单文件 exe 从内嵌资源读取。 |
 | `src/mcp/` | JSON-RPC 2.0、工具声明、逐行 stdio 与 Streamable HTTP。 |
 | `src/panel/server.js`、`src/panel/folder.js`、`panel/` | 回环监听、静态页面、同源 JSON API，以及用系统文件夹对话框选择工作目录。 |
