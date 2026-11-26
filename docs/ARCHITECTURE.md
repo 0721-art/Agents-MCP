@@ -24,6 +24,7 @@
 | `src/registry/` | 定位 CLI、并行探测目录、缓存结果并返回可操作的健康提示。10 分钟内的缓存直接返回，过期缓存先应答再后台刷新，所以面板首屏不再等一次全量探测。 |
 | `src/runner/` | 安全启动进程、解析行事件、限制输出缓冲，处理超时和取消。 |
 | `src/engine/` | 持久化授权、依赖图与评审循环、委派循环、原子状态写入。 |
+| `src/mcp/instructions.js` | 客户端连接时返回的说明：启用/停用状态、模式开关、一次授权约定。`src/mcp/protocol.js` 在 `initialize` 里带上它，并在每次 `tools/call` 前检查 `config.enabled`（停用即返回 `E_DISABLED`）。 |
 
 ## 适配器契约
 

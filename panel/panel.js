@@ -232,8 +232,27 @@ function renderAgents() {
   });
   $('agent-list').replaceChildren(...cards);
 }
+// One switch for the whole server: it is the same flag every tool call checks, so flipping
+// it here changes what agents see on their very next call.
+function renderSwitch() {
+  const button = $('mcp-switch');
+  if (!button) return;
+  const on = config?.enabled !== false;
+  button.textContent = on ? 'Agents-MCP 已启用' : 'Agents-MCP 已停用';
+  button.classList.toggle('on', on);
+  button.setAttribute('aria-pressed', String(on));
+}
+async function toggleSwitch() {
+  const next = config?.enabled === false;
+  if (!next && !window.confirm('停用后 Codex / DSH / Claude Code 的 agents_* 调用都会失败，直到重新启用。继续？')) return;
+  config = { ...config, ...await api('/config', 'PUT', { enabled: next }) };
+  renderSwitch();
+  message(next ? 'Agents-MCP 已启用：agent 下次调用就能看到「已启用」。' : 'Agents-MCP 已停用：工具调用会被拒绝，直到重新启用。');
+}
+
 async function loadAgents(refresh = false) {
   [agents, config] = await Promise.all([api('/agents' + (refresh ? '?refresh=1' : '')), api('/config')]);
+  renderSwitch();
   renderAgents();
   renderDraftActor();
   renderPeople();
@@ -706,6 +725,7 @@ async function loadRun(id) {
   log.scrollTop = scroll ?? log.scrollHeight;
 }
 wire('refresh-runs', loadRuns);
+wire('mcp-switch', toggleSwitch);
 
 loadAgents().then(renderSettings).then(loadBridges).then(loadHealth).catch(error => message(error.message, true));
 loadPresets().catch(error => message(error.message, true));

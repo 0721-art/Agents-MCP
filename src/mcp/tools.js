@@ -19,7 +19,7 @@ const flow = record({
 export function toolMap(service) {
   return new Map([
     ['agents_list', 'List agent health, models and reasoning efforts.', record({ refresh: boolean }),
-      async args => ({ agents: await service.listAgents(args) })],
+      async args => ({ agents: await service.listAgents(args), ...(service.notice?.() ?? {}) })],
     ['agents_gate', 'Record the human enable or disable decision for a task.', record({
       task: string, taskId: string, decision: { enum: ['enable', 'disable'] }, mode,
     }, ['decision']), service.gate],

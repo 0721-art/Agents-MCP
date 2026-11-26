@@ -10,7 +10,10 @@
 <body>
   <header class="masthead">
     <div class="identity"><span class="mark" aria-hidden="true">A</span><div><h1>Agents-MCP</h1><p>本机 Agent 控制台</p></div></div>
-    <span class="local"><i></i> 本地服务</span>
+    <div class="masthead-actions">
+      <button id="mcp-switch" class="switch on" type="button" aria-pressed="true" title="停用后所有 agent 的 agents_* 调用都会被拒绝">Agents-MCP 已启用</button>
+      <span class="local"><i></i> 本地服务</span>
+    </div>
   </header>
   <main>
     <section id="gate" class="gate" aria-label="任务授权" aria-live="polite" hidden></section>

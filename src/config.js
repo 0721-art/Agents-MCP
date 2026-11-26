@@ -4,6 +4,8 @@ export function problem(code, message, remedy) {
 
 export const defaults = {
   port: 4870, maxParallel: 3, stepTimeoutMinutes: 30, agents: {}, strengths: {}, fixtures: false, proxy: '',
+  // Master switch: the panel header flips this, and every MCP tool call checks it.
+  enabled: true,
   gate: { policy: 'ask-once', modeA: true, modeB: true, draftRoleRequiresGate: false },
   modeB: { maxDepth: 2, maxDelegations: 12, maxParallel: 3, wallClockMinutes: 60 },
 };
@@ -46,6 +48,7 @@ export function configWith(current, patch) {
     if (!Object.hasOwn(defaults.gate, key) || (key !== 'policy' && typeof value !== 'boolean')) invalid('Invalid gate.' + key);
   }
   if (typeof result.fixtures !== 'boolean') invalid('fixtures must be a boolean.');
+  if (typeof result.enabled !== 'boolean') invalid('enabled must be a boolean.');
   if (typeof result.proxy !== 'string' || (result.proxy.trim() && !/^(?:https?:\/\/)?[\w.-]+:\d+$/i.test(result.proxy.trim()))) {
     invalid('proxy must be empty or a host:port such as 127.0.0.1:7892.');
   }

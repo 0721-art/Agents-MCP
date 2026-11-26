@@ -1,5 +1,10 @@
 # 更新记录
 
+## 0.1.14
+
+- **总开关**：面板标题栏新增「Agents-MCP 已启用 / 已停用」按钮。停用后所有客户端的 `agents_*` 调用都返回 `E_DISABLED`（并说明怎么重新启用），工具列表照旧可见，不会让客户端报错；恢复启用立即生效。
+- **接入时告知状态**：MCP `initialize` 现在返回 `instructions`——当前启用/停用、模式 A/B 开关、一次授权约定。`agents_gate` 通过时返回 `notice`「Agents-MCP 已启用」，`agents_list` / `agents_flow_run` / `agents_delegate` / `agents_draft_role` 的结果也带上同一句，agent 会转述给用户。
+
 ## 0.1.13
 
 - **面板内一键更新修好了**：0.1.12 的发布只带 zip，打包版点"立即更新"会报找不到可替换的 exe。现在 release 单独上传两个 exe，更新时同时替换服务与窗口程序，替换完成后窗口自己重启到新版本。

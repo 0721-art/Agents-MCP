@@ -6,6 +6,7 @@ import { executeFlow, validateFlow } from './engine/flow.js';
 import { createGate } from './engine/gate.js';
 import { clientBridges, createUsage, recentCalls, setBridge as toggleBridge } from './bridges.js';
 import { environmentReport } from './diagnose.js';
+import { instructionText } from './mcp/instructions.js';
 import { createStore, resolveStateDirectory } from './engine/store.js';
 import { createRegistry } from './registry/index.js';
 import { deletePreset, readPresets, savePreset } from './presets.js';
@@ -58,6 +59,9 @@ export async function createService({ stateDir, env = process.env, cwd = process
   const gate = await createGate(store);
   const runs = new Map();
   let closing = false;
+  // Rides along with the answers an agent is most likely to read, so it can tell the user the
+  // server is on even if its client hides part of the initialize instructions.
+  const enabledNotice = () => (config.enabled === false ? {} : { notice: 'Agents-MCP 已启用' });
 
   async function start(kind, args, settings, execute) {
     if (closing) throw problem('E_CLOSING', 'The service is shutting down.');
@@ -246,7 +250,20 @@ export async function createService({ stateDir, env = process.env, cwd = process
   }
 
   const service = {
-    redact: store.redact, listAgents: args => registry.list(args), pending: () => gate.pending(),    gate: args => gate.decide(request(args)),
+    redact: store.redact, pending: () => gate.pending(),
+    listAgents: args => registry.list(args),
+    // The answer to the one question a task may ask, plus the sentence the agent should repeat
+    // to the user once the server is on.
+    gate: async args => {
+      const result = await gate.decide(request(args));
+      if (result.status !== 'enabled') return result;
+      const modes = [config.gate.modeA === false ? null : 'A', config.gate.modeB === false ? null : 'B']
+        .filter(Boolean).join(' / ') || '无';
+      return { ...result, notice: 'Agents-MCP 已启用，本次任务按模式 ' + modes + ' 运行。' };
+    },
+    mcpEnabled: () => config.enabled !== false,
+    notice: () => enabledNotice(),
+    instructions: () => instructionText({ enabled: config.enabled !== false, gate: config.gate, modeB: config.modeB }),
     presets: () => readPresets(store),
     savePreset: input => savePreset(store, input),
     deletePreset: id => deletePreset(store, id), getConfig: () => ({ ...config, stateDir: store.dir, stateFallback: resolved.fallback, version: version }),
@@ -310,7 +327,7 @@ export async function createService({ stateDir, env = process.env, cwd = process
         error.details = plan.errors;
         throw error;
       }
-      return start('A', args, settings, ctx => executeFlow(ctx, args, plan));
+      return { ...(await start('A', args, settings, ctx => executeFlow(ctx, args, plan))), ...enabledNotice() };
     },
     async delegate(input) {
       const args = request(input);
@@ -321,7 +338,7 @@ export async function createService({ stateDir, env = process.env, cwd = process
       if (decision.status !== 'enabled') return decision;
       const caps = delegationCaps(settings, args);
       await registry.get(args);
-      return start('B', args, settings, async ctx => {
+      return { ...(await start('B', args, settings, async ctx => {
         ctx.state.caps = caps;
         let expired = false;
         const timer = setTimeout(() => {
@@ -335,7 +352,7 @@ export async function createService({ stateDir, env = process.env, cwd = process
         } finally {
           clearTimeout(timer);
         }
-      });
+      })), ...enabledNotice() };
     },
     async draftRole(input) {
       const args = request(input);
@@ -347,12 +364,12 @@ export async function createService({ stateDir, env = process.env, cwd = process
         if (decision.status !== 'enabled') return decision;
       }
       await registry.get(args);
-      return start('draft', { ...args, task }, settings, async ctx => {
+      return { ...(await start('draft', { ...args, task }, settings, async ctx => {
         const prompt = 'Expand this brief into a practical responsibility for one agent. Return only the responsibility.\n\n' + args.brief;
         const result = await ctx.invoke('draft', { ...args, writes: false }, prompt);
         await ctx.transcript('draft', prompt, result.answer);
         return { status: ctx.signal.aborted ? 'cancelled' : result.failed ? 'FAILED' : 'PASS', answer: result.answer };
-      });
+      })), ...enabledNotice() };
     },
     async status({ runId } = {}) {
       const directory = store.runDir(runId);

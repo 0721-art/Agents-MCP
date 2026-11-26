@@ -28,7 +28,8 @@ export function createProtocol(service) {
       if (typeof params?.protocolVersion !== 'string') return rpcError(id, -32602, 'protocolVersion is required');
       await service.noteClient?.(params.clientInfo);
       return success({ protocolVersion: versions.includes(params.protocolVersion) ? params.protocolVersion : versions[0],
-        capabilities: { tools: {}, logging: {} }, serverInfo: { name: 'agents', version } });
+        capabilities: { tools: {}, logging: {} }, serverInfo: { name: 'agents', version },
+        instructions: service.instructions?.() });
     }
     if (method === 'ping') return success({});
     if (method === 'logging/setLevel') {
@@ -55,6 +56,12 @@ export function createProtocol(service) {
     try {
       const tool = tools.get(params.name);
       if (!tool) throw problem('E_TOOL', 'Unknown tool: ' + params.name, 'Call tools/list for the supported names.');
+      // One switch for the whole server: while it is off nothing starts an agent, and the
+      // answer says so in words the model can repeat to the user.
+      if (!service.mcpEnabled?.()) {
+        throw problem('E_DISABLED', 'Agents-MCP 已停用：本次调用没有执行。',
+          '在面板 header 点「启用 Agents-MCP」后重试；停用期间所有 agents_* 工具都会这样返回。');
+      }
       data = await tool.call(params.arguments ?? {});
     } catch (error) {
       isError = true;

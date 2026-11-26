@@ -16,6 +16,12 @@ h2 { font-size: clamp(1.35rem, 3vw, 1.8rem); letter-spacing: -.025em; }
 h3 { font-size: 1rem; }
 .masthead { padding: 16px max(24px, calc((100vw - 1200px) / 2)); display: flex; justify-content: space-between; align-items: center; background: #122039; color: #f4f7ff; gap: 16px; }
 .identity, .local { display: flex; align-items: center; gap: 10px; }
+.masthead-actions { display: flex; align-items: center; gap: 14px; }
+.switch { font: inherit; font-size: .82rem; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.08); color: #e8eefc; }
+.switch.on { background: #1d7a53; border-color: #2f9c6c; color: #effff7; }
+.switch:hover { filter: brightness(1.12); }
+.switch:disabled { opacity: .6; cursor: progress; }
 .identity p, .local { color: #c5d0e5; font-size: .82rem; }
 .mark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: #3261df; font-size: 1.25rem; font-weight: 750; }
 .local i { display: inline-block; width: 8px; height: 8px; background: #63dbad; border-radius: 50%; }
