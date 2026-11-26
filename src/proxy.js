@@ -99,18 +99,30 @@ function shape(response) {
 
 // Only GET is needed: the release lookup and the asset download. Anything else fails loudly
 // instead of silently going out without the tunnel.
-export function proxyFetch(proxyValue, { timeoutMs = 30_000 } = {}) {
+export function proxyFetch(proxyValue, { timeoutMs = 30_000, maxRedirects = 5 } = {}) {
   const proxy = proxyValue instanceof URL ? proxyValue : parseProxy(proxyValue);
   if (!proxy) throw problem('E_PROXY', 'No proxy to use.');
   return async (input, init = {}) => {
-    const url = new URL(typeof input === 'string' ? input : input.url);
     const method = (init.method ?? 'GET').toUpperCase();
     if (method !== 'GET') throw problem('E_PROXY', 'Only GET can go through the proxy.');
-    const headers = { ...init.headers, host: url.host };
     const timeout = init.signal?.timeout ?? timeoutMs;
+    let url = new URL(typeof input === 'string' ? input : input.url);
+    const headers = { ...init.headers };
+    for (let hop = 0; ; hop += 1) {
+      const response = await once(url, { ...headers, host: url.host }, timeout);
+      const location = response.headers.location;
+      // Release assets answer 302 to a storage host; without following it the download
+      // would always fail with the redirect status.
+      if (![301, 302, 303, 307, 308].includes(response.status) || !location) return response;
+      if (hop >= maxRedirects) throw problem('E_PROXY', 'The proxy path to ' + url.host + ' redirected too many times.');
+      url = new URL(location, url);
+    }
+  };
+
+  async function once(url, headers, timeout) {
     let request;
     if (url.protocol === 'http:') {
-      request = httpRequest({ host: proxy.hostname, port: Number(proxy.port), method, path: url.href, headers, timeout });
+      request = httpRequest({ host: proxy.hostname, port: Number(proxy.port), method: 'GET', path: url.href, headers, timeout });
     } else {
       const socket = await tunnel(proxy, url.hostname, Number(url.port || 443), timeout);
       const secure = await secureSocket(socket, url.hostname, timeout);
@@ -119,7 +131,7 @@ export function proxyFetch(proxyValue, { timeoutMs = 30_000 } = {}) {
       const whileOpen = new HttpsAgent({ keepAlive: false, maxSockets: 1 });
       whileOpen.createConnection = () => secure;
       request = httpsRequest({
-        host: url.hostname, port: Number(url.port || 443), method, path: url.pathname + url.search,
+        host: url.hostname, port: Number(url.port || 443), method: 'GET', path: url.pathname + url.search,
         headers, timeout, agent: whileOpen,
       });
     }
@@ -132,5 +144,5 @@ export function proxyFetch(proxyValue, { timeoutMs = 30_000 } = {}) {
       request.once('error', error => reject(problem('E_PROXY', 'The request to ' + url.host + ' failed (' + (error.code ?? error.message) + ').')));
       request.end();
     });
-  };
+  }
 }

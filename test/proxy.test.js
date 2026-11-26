@@ -46,6 +46,21 @@ test('a plain HTTP request goes through the proxy in absolute form', async t => 
   assert.deepEqual(seen, ['http://example.test/releases/latest']);
 });
 
+test('a redirect to the asset host is followed', async t => {
+  const proxy = await listening((req, res) => {
+    if (req.url.endsWith('/assets/1')) {
+      res.writeHead(302, { location: '/assets/2' }).end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/octet-stream' }).end('binary');
+  });
+  t.after(() => new Promise(resolve => proxy.close(resolve)));
+  const send = proxyFetch('127.0.0.1:' + proxy.address().port);
+  const response = await send('http://example.test/assets/1');
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), 'binary');
+});
+
 test('a refused tunnel is reported as a proxy problem', async t => {
   const proxy = await listening(() => {});
   proxy.on('connect', (request, socket) => {
