@@ -71,6 +71,15 @@
           <span class="nav-label">运行记录</span>
           <span class="nav-badge mono" data-slot="runs-badge" hidden></span>
         </button>
+        <button type="button" class="nav-item" data-tab="route" aria-controls="route">
+          <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="3.6" cy="8" r="1.9"></circle>
+            <circle cx="12.4" cy="4" r="1.5"></circle>
+            <circle cx="12.4" cy="12" r="1.5"></circle>
+            <path d="M5.4 7.4 10.9 4.6M5.4 8.6 10.9 11.4"></path>
+          </svg>
+          <span class="nav-label">协作动画</span>
+        </button>
         <button type="button" class="nav-item" data-tab="settings" aria-controls="settings">
           <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
             <circle cx="8" cy="8" r="2.2"></circle>
@@ -288,6 +297,46 @@
               <p class="hint">从左侧选择一条运行记录查看路由图、步骤与思考过程，或去模式 A 发起一次。</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section id="route" class="page" hidden>
+        <div class="page-head">
+          <div class="page-title">
+            <h1>协作动画</h1>
+            <p class="page-sub">Agent 之间的每一次交接：谁交给谁、带走了什么、花了多久</p>
+          </div>
+          <div class="head-actions">
+            <label class="inline-field">
+              <span>运行</span>
+              <select id="route-run" class="route-run-picker" aria-label="选择要显示动画的运行"></select>
+            </label>
+            <label class="switch-line">
+              <input id="route-live" type="checkbox" checked>
+              <span>实时</span>
+            </label>
+            <button id="route-replay" type="button" class="btn">重播动画</button>
+            <button id="route-refresh" type="button" class="btn">刷新</button>
+          </div>
+        </div>
+        <div id="route-facts" class="route-facts" aria-label="运行关键信息"></div>
+        <figure id="route-figure" class="card route route-page">
+          <div class="route-head">
+            <div class="route-title-wrap">
+              <h2 id="route-title">选择一次运行</h2>
+              <span id="route-summary" class="card-sub" data-route-summary></span>
+            </div>
+            <span id="route-live-badge" class="pill" hidden>实时</span>
+          </div>
+          <div id="route-body" class="route-body" data-route-body></div>
+          <figcaption id="route-legend" class="route-legend" data-route-legend></figcaption>
+        </figure>
+        <div class="card section-block">
+          <div class="section-head">
+            <h2>交接明细</h2>
+            <span class="card-sub">上游是谁、交了哪些产物、下游拿到什么</span>
+          </div>
+          <div id="route-handoffs" class="handoff-table" aria-label="交接明细"></div>
         </div>
       </section>
 

@@ -277,6 +277,7 @@ async function switchTab(id) {
     await loadRuns();
     if (runDetailState?.routeFigure) scheduleRouteRender(runDetailState.routeFigure);
   }
+  if (id === 'route') await loadRoutePage();
 }
 document.querySelectorAll('[data-tab]').forEach(node => node.addEventListener('click', () =>
   switchTab(node.dataset.tab).catch(error => message(error.message, true))));
@@ -854,7 +855,11 @@ function cacheFlowPlan(runId, data) {
   if (!runId || !Array.isArray(data?.steps)) return;
   const stepIds = new Set(data.steps.map(s => s.id));
   const participantOf = {};
-  for (const step of data.steps) participantOf[step.id] = step.participant || '';
+  const producesOf = {};
+  for (const step of data.steps) {
+    participantOf[step.id] = step.participant || '';
+    producesOf[step.id] = Array.isArray(step.produces) ? step.produces.filter(Boolean) : [];
+  }
   const hasExplicitDeps = data.steps.some(s => Array.isArray(s.dependsOn) && s.dependsOn.length > 0);
   const stepEdges = [];
   if (hasExplicitDeps) {
@@ -874,7 +879,7 @@ function cacheFlowPlan(runId, data) {
     const oldest = flowPlans.keys().next().value;
     if (oldest !== undefined) flowPlans.delete(oldest);
   }
-  flowPlans.set(runId, { hasExplicitDeps, stepEdges, loopEdges, participantOf });
+  flowPlans.set(runId, { hasExplicitDeps, stepEdges, loopEdges, participantOf, producesOf });
 }
 async function launchRun(path, data) {
   const result = await api(path, 'POST', data);
@@ -1227,6 +1232,9 @@ function cubicMid(sx, sy, c1x, c1y, c2x, c2y, tx, ty) {
 }
 
 function layoutRouting(model, containerWidth) {
+  // 协作动画页把节点放得更宽，好让「产物 · 耗时 · token」在同一行读得下。
+  const NODE_W = model.nodeWidth ?? 164;
+  const GAP_X = model.gapX ?? 52;
   const visibleNodes = model.nodes.slice(0, MAX_ROUTE_NODES);
   const omitted = Math.max(0, model.nodes.length - visibleNodes.length);
   const visibleKeys = new Set(visibleNodes.map(n => n.key));
@@ -2083,6 +2091,255 @@ async function loadRun(id) {
   s.cancelWrap.hidden = Boolean(run.finishedAt);
 }
 
+// ============================================================================
+// 协作动画：专门展示 agent 之间每一次交接的独立页面
+// ============================================================================
+const routePageState = { runId: '', live: true, busy: false, factsSig: '', rowsSig: '', replayUntil: 0 };
+
+function countText(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return '';
+  return value >= 1000 ? (value / 1000).toFixed(value >= 10_000 ? 0 : 1) + 'k' : String(value);
+}
+function tokenText(tokens) {
+  if (!tokens) return '';
+  const parts = [];
+  if (countText(tokens.inputTokens)) parts.push('入 ' + countText(tokens.inputTokens));
+  if (countText(tokens.outputTokens)) parts.push('出 ' + countText(tokens.outputTokens));
+  if (countText(tokens.reasoningTokens)) parts.push('思考 ' + countText(tokens.reasoningTokens));
+  return parts.join(' · ');
+}
+function stepActorText(info) {
+  if (!info) return '—';
+  const who = [agentLabel(info.agent), info.model, info.effort].filter(Boolean).join(' · ');
+  return who || '—';
+}
+function producedNames(run, stepId) {
+  const planned = flowPlans.get(run?.runId)?.producesOf?.[stepId];
+  if (planned?.length) return planned;
+  // 历史运行没有本次会话的计划缓存，产物文件名约定是「步骤 ID - 产物名.md」。
+  return (run?.artifacts ?? [])
+    .filter(name => name === stepId + '.md' || name.startsWith(stepId + '-'))
+    .map(name => name.replace(/\.md$/, ''));
+}
+
+function routeFacts(run, model) {
+  const entries = Object.entries(run.steps ?? {});
+  const totals = entries.reduce((acc, [, info]) => {
+    acc.input += info?.tokens?.inputTokens ?? 0;
+    acc.output += info?.tokens?.outputTokens ?? 0;
+    acc.reasoning += info?.tokens?.reasoningTokens ?? 0;
+    return acc;
+  }, { input: 0, output: 0, reasoning: 0 });
+  const handoffs = model.edges.filter(edge => edge.kind !== 'loop').length;
+  const rounds = model.edges.filter(edge => edge.kind === 'loop').length;
+  return {
+    entries, totals, handoffs, rounds,
+    agentsInvolved: new Set(entries.map(([, info]) => info?.agent).filter(Boolean)).size,
+    artifacts: run.artifacts ?? [],
+  };
+}
+
+function factCard(label, value, options = {}) {
+  const valueEl = el('span', value || '—', 'fact-value' + (options.mono ? ' mono' : ''));
+  if (options.wrap !== false) valueEl.classList.add('fact-wrap');
+  return group('fact', el('span', label, 'fact-label'), valueEl);
+}
+
+function renderRouteFacts(run, model, facts) {
+  const box = $('route-facts');
+  const tx = tokenText({ inputTokens: facts.totals.input, outputTokens: facts.totals.output, reasoningTokens: facts.totals.reasoning });
+  const sig = [run.runId, run.status, run.finishedAt, facts.handoffs, facts.rounds, facts.agentsInvolved,
+    facts.totals.input, facts.totals.output, facts.totals.reasoning, facts.artifacts.join(','), run.task].join('|');
+  if (sig === routePageState.factsSig) return;
+  routePageState.factsSig = sig;
+
+  const statusCard = group('fact', el('span', '状态', 'fact-label'), badge(run.status, 'run'));
+  const cards = [
+    statusCard,
+    factCard('模式', runKinds[run.kind] ?? run.kind),
+    factCard('总耗时', formatDuration(runDurationMs(run)), { mono: true }),
+    factCard('Agent', facts.agentsInvolved + ' 个'),
+    factCard('交接', facts.handoffs + ' 次' + (facts.rounds ? '（含 ' + facts.rounds + ' 条评审回环）' : '')),
+    factCard('Token', tx || '—', { mono: true }),
+    factCard('开始', formatClock(run.startedAt), { mono: true }),
+    factCard('产物', facts.artifacts.length ? facts.artifacts.length + ' 个' : '—'),
+  ];
+  const task = group('fact fact-task',
+    el('span', '任务目标', 'fact-label'),
+    el('p', run.task || '（未命名任务）', 'fact-task-text'));
+
+  const artifactChips = facts.artifacts.map(name => {
+    const link = el('a', name, 'chip-link mono');
+    link.href = '/api/runs/' + run.runId + '/files/artifacts/' + encodeURIComponent(name);
+    link.target = '_blank';
+    link.rel = 'noopener';
+    return link;
+  });
+  const chips = artifactChips.length ? group('fact artifact-row',
+    el('span', '产物文件', 'fact-label'), group('chip-row', ...artifactChips)) : null;
+
+  const runIdCard = group('fact', el('span', '运行 ID', 'fact-label'), el('span', run.runId, 'fact-value mono'));
+  box.replaceChildren(...cards, runIdCard, task, ...(chips ? [chips] : []));
+}
+
+function renderRouteHandoffs(run, model) {
+  const box = $('route-handoffs');
+  const forward = model.edges.filter(edge => edge.kind !== 'loop');
+  const loops = model.edges.filter(edge => edge.kind === 'loop');
+
+  const rows = forward.map(edge => {
+    const up = run.steps?.[edge.from];
+    const down = run.steps?.[edge.to];
+    const names = producedNames(run, edge.from);
+    const deliver = names.length ? names.join('、') : (up ? '上游产出（见产物文件）' : '任务文本');
+    const cells = [
+      group('handoff-flow',
+        el('span', edge.from, 'handoff-step mono'),
+        el('span', '→', 'handoff-arrow'),
+        el('span', edge.to, 'handoff-step mono')),
+      el('span', deliver, 'handoff-deliver'),
+      el('span', stepActorText(up), 'handoff-actor'),
+      el('span', formatDuration(up?.durationMs), 'handoff-metric mono'),
+      el('span', tokenText(up?.tokens) || '—', 'handoff-metric mono'),
+      badge(edge.state === 'active' ? 'running' : (down?.status ?? 'pending'), 'step'),
+    ];
+    const row = group('handoff-row', ...cells);
+    row.dataset.state = edge.state ?? '';
+    return row;
+  });
+
+  const loopRows = loops.map(edge => {
+    const row = group('handoff-row handoff-loop',
+      group('handoff-flow',
+        el('span', edge.from, 'handoff-step mono'),
+        el('span', '↺', 'handoff-arrow'),
+        el('span', edge.to, 'handoff-step mono')),
+      el('span', edge.label || '评审结论回写', 'handoff-deliver'),
+      el('span', '评审循环', 'handoff-actor mono'),
+      el('span', String(run.loopRounds?.[edge.to] ?? '—'), 'handoff-metric mono'),
+      el('span', '最多 ' + (edge.maxRounds ?? 2) + ' 轮', 'handoff-metric mono'),
+      badge('pending', 'step'));
+    return row;
+  });
+
+  const sig = JSON.stringify([forward.map(e => [e.from, e.to, e.state, run.steps?.[e.to]?.status]), loops.length]);
+  if (sig !== routePageState.rowsSig) {
+    routePageState.rowsSig = sig;
+    if (!forward.length && !loops.length) {
+      box.replaceChildren(group('empty', el('p', '还没有交接', 'empty-title'), el('p', '这条运行只有一步，或尚未开始交接。', 'hint')));
+    } else {
+      const header = group('handoff-row handoff-header',
+        el('span', '交接', 'handoff-head'), el('span', '交付内容', 'handoff-head'),
+        el('span', '上游 Agent / 模型 / 强度', 'handoff-head'), el('span', '上游耗时', 'handoff-head'),
+        el('span', '上游 Token', 'handoff-head'), el('span', '下游状态', 'handoff-head'));
+      box.replaceChildren(header, ...rows, ...loopRows);
+    }
+  }
+}
+
+async function loadRoutePage() {
+  if (routePageState.busy) return;
+  routePageState.busy = true;
+  try {
+    const runs = await api('/runs');
+    const picker = $('route-run');
+    const sig = runs.map(run => run.runId + ':' + run.status).join(',');
+    if (picker.dataset.sig !== sig) {
+      picker.dataset.sig = sig;
+      picker.replaceChildren(...runs.map(run => {
+        const opt = el('option', (runKinds[run.kind] ?? run.kind ?? '任务') + ' · ' + (run.task || run.runId).slice(0, 40));
+        opt.value = run.runId;
+        return opt;
+      }));
+    }
+    if (!routePageState.runId || !runs.some(run => run.runId === routePageState.runId)) {
+      routePageState.runId = runs[0]?.runId ?? '';
+    }
+    if (picker.value !== routePageState.runId) picker.value = routePageState.runId;
+
+    if (!routePageState.runId) {
+      $('route-title').textContent = '还没有运行记录';
+      $('route-summary').textContent = '去模式 A 发起一次编排，或在模式 B 里让主 Agent 派活。';
+      $('route-body').replaceChildren(group('empty', el('p', '这里会显示 agent 之间的交接动画', 'empty-title')));
+      $('route-legend').replaceChildren();
+      $('route-facts').replaceChildren();
+      $('route-handoffs').replaceChildren();
+      return;
+    }
+
+    const run = await api('/runs/' + routePageState.runId);
+    if (tab !== 'route' || routePageState.runId !== run.runId) return;
+
+    const model = buildRunRouting(run, flowPlans.get(run.runId));
+    model.nodeWidth = 210;
+    model.gapX = 108;
+    const facts = routeFacts(run, model);
+    for (const node of model.nodes) {
+      const info = run.steps?.[node.key];
+      const total = (info?.tokens?.inputTokens ?? 0) + (info?.tokens?.outputTokens ?? 0);
+      const meta = [];
+      if (typeof info?.durationMs === 'number') meta.push(formatDuration(info.durationMs));
+      if (total) meta.push(countText(total) + ' tok');
+      if (meta.length) node.meta = meta.join(' · ');
+    }
+
+    // 线上标交付物本身（节点与表格里已经有耗时与 token，线上只留最短的辨识信息）。
+    for (const edge of model.edges) {
+      if (edge.kind === 'loop') continue;
+      const short = producedNames(run, edge.from)
+        .map(name => (name.startsWith(edge.from + '-') ? name.slice(edge.from.length + 1) : name))
+        .filter(Boolean);
+      edge.label = short.slice(0, 2).join('、');
+    }
+
+    // 重播：把已完成的交接临时标记为「正在流动」，让历史运行也能看到数据包。
+    if (Date.now() < routePageState.replayUntil) {
+      for (const edge of model.edges) {
+        if (edge.kind === 'loop') continue;
+        edge.state = 'active';
+        edge.activePacket = true;
+      }
+    }
+
+    const headline = (run.task || run.runId).split('\n')[0].trim();
+    $('route-title').textContent = headline.length > 70 ? headline.slice(0, 70) + '…' : headline;
+    $('route-title').title = run.task || run.runId;
+    $('route-summary').textContent = [runKinds[run.kind] ?? run.kind, formatClock(run.startedAt), formatDuration(runDurationMs(run)), facts.artifacts.length + ' 个产物'].filter(Boolean).join(' · ');
+    $('route-live-badge').hidden = run.status !== 'running';
+
+    renderRouteFacts(run, model, facts);
+    renderRouting($('route-figure'), model);
+    renderRouteHandoffs(run, model);
+  } finally {
+    routePageState.busy = false;
+  }
+}
+
+wire('route-refresh', loadRoutePage);
+wire('route-replay', async () => {
+  const run = await api('/runs/' + routePageState.runId);
+  const edges = Object.keys(run.steps ?? {}).length - 1;
+  const span = 1500 + Math.max(0, edges) * 260;
+  routePageState.replayUntil = Date.now() + span;
+  routePageState.factsSig = '';
+  routePageState.rowsSig = '';
+  await loadRoutePage();
+  setTimeout(() => {
+    routePageState.replayUntil = 0;
+    if (tab === 'route') void loadRoutePage();
+  }, span + 120);
+});
+$('route-run').addEventListener('change', async event => {
+  routePageState.runId = event.target.value;
+  routePageState.factsSig = '';
+  routePageState.rowsSig = '';
+  await loadRoutePage();
+});
+$('route-live').addEventListener('change', event => {
+  routePageState.live = event.target.checked;
+  if (routePageState.live) void loadRoutePage();
+});
+
 wire('refresh-runs', loadRuns);
 wire('mcp-switch', toggleSwitch);
 
@@ -2129,3 +2386,4 @@ function poll(action, ms) {
 }
 poll(loadGate, 1500);
 poll(() => tab === 'runs' && loadRuns(), 1000);
+poll(() => tab === 'route' && routePageState.live && Date.now() >= routePageState.replayUntil && loadRoutePage(), 1000);

@@ -2005,3 +2005,180 @@ pre.event-log {
     animation: none;
   }
 }
+
+/* ---------- 协作动画页 ---------- */
+.inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--fg-3);
+}
+
+.route-run-picker {
+  max-width: 320px;
+}
+
+.switch-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-12);
+  color: var(--fg-2);
+}
+
+.route-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 148px), 1fr));
+  gap: var(--sp-2);
+}
+
+.fact {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.fact-label {
+  font-size: var(--fs-12);
+  color: var(--fg-3);
+}
+
+.fact-value {
+  font-size: var(--fs-13);
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.fact-task,
+.artifact-row {
+  grid-column: 1 / -1;
+}
+
+.fact-task-text {
+  font-size: var(--fs-13);
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-link {
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: var(--fs-12);
+  color: var(--fg-2);
+  text-decoration: none;
+}
+
+.chip-link:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.route-page .route-body {
+  min-height: 320px;
+}
+
+.route-page .route-stage {
+  min-height: 320px;
+  background: var(--bg);
+}
+
+.handoff-table {
+  display: grid;
+  gap: 6px;
+}
+
+.handoff-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(120px, 1.4fr) minmax(140px, 1.3fr) 92px 132px 92px;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 8px var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: var(--fs-13);
+}
+
+.handoff-row[data-state="active"] {
+  border-color: var(--accent-line);
+  background: var(--accent-weak);
+}
+
+.handoff-header {
+  border: 0;
+  padding-bottom: 0;
+  background: transparent;
+  font-size: var(--fs-12);
+  color: var(--fg-3);
+}
+
+.handoff-flow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.handoff-step {
+  color: var(--fg);
+}
+
+.handoff-arrow {
+  color: var(--fg-3);
+}
+
+.handoff-deliver,
+.handoff-actor,
+.handoff-metric {
+  color: var(--fg-2);
+  overflow-wrap: anywhere;
+}
+
+.handoff-loop {
+  border-style: dashed;
+}
+
+@media (max-width: 900px) {
+  .handoff-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .handoff-header {
+    display: none;
+  }
+}
+
+.route-page .route-title-wrap h2 {
+  max-width: min(100%, 46ch);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fact-task-text {
+  max-height: 96px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.route-page .route-body,
+.route-page .route-stage {
+  min-height: 260px;
+}
+
+.route-page .route-body,
+.route-page .route-stage {
+  min-height: 200px;
+}
