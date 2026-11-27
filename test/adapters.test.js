@@ -63,7 +63,7 @@ test('Antigravity stream events yield the final answer and session', () => {
 test('reasoning text and thinking tokens survive every stream shape in use', () => {
   assert.deepEqual(jsonEvent(JSON.stringify({ type: 'item.completed',
     item: { type: 'reasoning', summary: [{ type: 'summary_text', text: 'Checked 17*23.' }, { text: 'Then 391.' }] } })),
-  { type: 'reasoning', text: 'Checked 17*23.\nThen 391.', sessionId: undefined });
+  { type: 'reasoning', text: 'Checked 17*23.\nThen 391.', sessionId: undefined, publicSummary: true });
   assert.deepEqual(jsonEvent(JSON.stringify({ type: 'assistant',
     message: { role: 'assistant', content: [{ type: 'thinking', thinking: 'Hidden reasoning.' }] } })),
   { type: 'reasoning', text: 'Hidden reasoning.', sessionId: undefined });

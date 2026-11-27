@@ -30,7 +30,10 @@ export function toolMap(service) {
     ['agents_delegate', 'Start capped Mode B delegation after the task gate.', record({
       ...task, ...actor, writes: boolean, maxDepth: integer, maxDelegations: integer, maxParallel: integer, wallClockMinutes: integer,
     }, ['task', 'agent', 'model', 'effort']), service.delegate],
-    ['agents_status', 'Read step statuses, events, artifacts and report path.', record({ runId: string }, ['runId']), service.status],
+    ['agents_status', 'Read run details or a page of collaboration messages. Start with after=0 and reuse timelineCursor. '
+      + 'When there are no unread messages, waitMs can wait for the next update.',
+    record({ runId: string, after: { type: 'integer', minimum: 0 }, waitMs: { type: 'integer', minimum: 0, maximum: 15000 } }, ['runId']),
+    service.status],
     ['agents_cancel', 'Cancel a run and terminate its active processes.', record({ runId: string }, ['runId']), service.cancel],
     ['agents_draft_role', 'Start a responsibility-drafting run and read its answer with agents_status.', record({
       ...actor, ...task, brief: string,

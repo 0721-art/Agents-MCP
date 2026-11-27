@@ -177,6 +177,17 @@
           </div>
         </div>
 
+        <div class="card draft-card">
+          <div class="card-head">
+            <div>
+              <h2>职责代笔</h2>
+              <span class="card-sub">参与者卡片上的「帮我写职责」会用这里的设置：指定 Agent 与思考强度，留空则各用参与者自己的 Agent</span>
+            </div>
+            <span id="draft-note" class="draft-note">使用每个参与者自己的 Agent</span>
+          </div>
+          <div id="draft-actor" class="fields draft-bar"></div>
+        </div>
+
         <div class="cols-2">
           <div class="card">
             <div class="card-head">
@@ -186,7 +197,6 @@
               </div>
               <button id="add-person" type="button" class="btn btn-sm">添加参与者</button>
             </div>
-            <div id="draft-actor" class="fields draft-bar"></div>
             <div id="people" class="stack"></div>
           </div>
 
@@ -283,7 +293,7 @@
         <div class="page-head">
           <div class="page-title">
             <h1>运行记录</h1>
-            <p class="page-sub">每 1 秒自动刷新 · 详情包含路由图、步骤、思考过程与委派树</p>
+            <p class="page-sub">每 1 秒更新协作对话，查看进展、交接和结果</p>
           </div>
           <div class="head-actions">
             <button id="refresh-runs" type="button" class="btn">刷新</button>
@@ -294,7 +304,7 @@
           <div id="run-detail" class="card run-detail-panel" aria-label="运行详情">
             <div class="empty">
               <p class="empty-title">选择一条运行记录</p>
-              <p class="hint">从左侧选择一条运行记录查看路由图、步骤与思考过程，或去模式 A 发起一次。</p>
+              <p class="hint">从左侧选择一条运行记录查看协作对话，或去模式 A 发起一次。</p>
             </div>
           </div>
         </div>

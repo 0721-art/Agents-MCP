@@ -22,6 +22,7 @@ if (args[0] === '--sleep') {
   if (args.includes('--echo')) print('result', prompt);
   else if (prompt.includes('thinking-demo')) {
     emit({ type: 'item.completed', item: { type: 'reasoning', text: 'Fixture reasons about the task.' } });
+    emit({ type: 'reasoning_summary', text: 'Fixture summary for the user.' });
     emit({ type: 'turn.completed', usage: { input_tokens: 10, output_tokens: 5, reasoning_output_tokens: 42 } });
     print('result', 'Fixture answer\nVERDICT: PASS');
   }

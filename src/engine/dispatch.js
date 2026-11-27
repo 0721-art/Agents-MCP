@@ -59,7 +59,8 @@ export async function executeDispatch(ctx, input, caps) {
     const { adapter } = await ctx.registry.get(actor);
     for (let round = 1; round <= caps.maxDelegations + 2 && !ctx.signal.aborted; round++) {
       const step = round === 1 ? id : id + '-r' + round;
-      const result = await limited(() => ctx.invoke(step, actor, prompt, { sessionId }));
+      const result = await limited(() => ctx.invoke(step, actor, prompt, { sessionId,
+        task: round === 1 ? task : '汇总委派结果并继续任务' }));
       answer = result.answer;
       await ctx.transcript(step, prompt, answer);
       if (result.failed) return { status: ctx.signal.aborted ? 'cancelled' : 'FAILED', answer };
@@ -92,15 +93,21 @@ export async function executeDispatch(ctx, input, caps) {
         const edge = { id: childId, parent: id, agent: data.to, status: 'running' };
         tree.push(edge);
         ctx.state.delegations = count;
+        ctx.note({ kind: 'delegate', from: step, fromAgent: actor.agent, to: childId, toAgent: worker.agent }, data.task);
         await ctx.save();
+        let detail;
         try {
           const child = await actorLoop(worker, childId, depth + 1, data.task);
           edge.status = child.status;
+          detail = child.answer;
           return childId + ' ' + child.status + ' (' + ctx.stepPath(childId) + ')\n' + child.answer;
         } catch (error) {
           edge.status = 'refused';
-          return 'DELEGATION_REFUSED: ' + ctx.redact(error.message);
+          detail = ctx.redact(error.message);
+          return 'DELEGATION_REFUSED: ' + detail;
         } finally {
+          ctx.note({ kind: 'delegation_result', from: childId, fromAgent: worker.agent, to: step, toAgent: actor.agent,
+            status: edge.status }, detail);
           await ctx.save();
         }
       }));

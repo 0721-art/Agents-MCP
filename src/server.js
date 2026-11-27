@@ -1,6 +1,7 @@
 import { readFile, realpath, rm, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { configWith, defaults, identifier, object, problem } from './config.js';
+import { setTimeout as delay } from 'node:timers/promises';
+import { configWith, defaults, identifier, integer, object, problem } from './config.js';
 import { delegationCaps, executeDispatch } from './engine/dispatch.js';
 import { executeFlow, validateFlow } from './engine/flow.js';
 import { createGate } from './engine/gate.js';
@@ -12,6 +13,7 @@ import { createRegistry } from './registry/index.js';
 import { deletePreset, readPresets, savePreset } from './presets.js';
 import { run } from './runner/exec.js';
 import { normalize } from './runner/events.js';
+import { collaborationMessage } from './mcp/summary.js';
 import { applyUpdate as upgradeCheckout, checkForUpdate, packaged, version } from './update.js';
 
 const request = value => {
@@ -80,7 +82,7 @@ export async function createService({ stateDir, env = process.env, cwd = process
     const root = store.runDir(id);
     const controller = new AbortController();
     const state = { runId: id, kind, task: args.task, cwd: target, status: 'running',
-      startedAt: new Date().toISOString(), steps: {}, warnings: [] };
+      startedAt: new Date().toISOString(), steps: {}, warnings: [], timeline: [] };
     let writes = Promise.resolve();
     let events = Promise.resolve();
     let eventError;
@@ -95,6 +97,12 @@ export async function createService({ stateDir, env = process.env, cwd = process
       events = events.then(() => store.appendEvent(id, { at: new Date().toISOString(), ...event }))
         .catch(error => { eventError ??= error; });
     };
+    const note = (event, detail) => {
+      const clean = detail && store.redact(detail).trim();
+      state.timeline.push({ ...event, at: new Date().toISOString(),
+        message: collaborationMessage(event), ...(clean && { detail: clean.slice(0, 1200) }) });
+    };
+    note({ kind: 'run_started', mode: kind });
     const stepPath = step => join(root, 'steps', step + '.md');
     // Reasoning is kept per step so both the panel and the stored transcript can show it.
     const thinking = new Map();
@@ -104,7 +112,7 @@ export async function createService({ stateDir, env = process.env, cwd = process
       return store.writeText(stepPath(step), '# Prompt\n\n' + prompt + section + '\n\n# Answer\n\n' + answer + '\n');
     };
     const ctx = {
-      state, save, registry, config: settings, signal: controller.signal, abort: () => controller.abort(),
+      state, save, note, registry, config: settings, signal: controller.signal, abort: () => controller.abort(),
       redact: store.redact, stepPath, transcript,
       removeArtifact: path => rm(path, { force: true }),
       async artifact(name, answer) {
@@ -112,13 +120,15 @@ export async function createService({ stateDir, env = process.env, cwd = process
         await store.writeText(path, answer + '\n');
         return path;
       },
-      async invoke(step, actor, prompt, { schema, sessionId } = {}) {
+      async invoke(step, actor, prompt, { schema, sessionId, task } = {}) {
         // A review loop re-runs a step, and the new round starts with fresh reasoning.
         thinking.delete(step);
         const stepState = Object.hasOwn(state.steps, step) ? state.steps[step] : { round: 1 };
         Object.defineProperty(state.steps, step, { value: stepState, enumerable: true, writable: true, configurable: true });
         Object.assign(stepState, { status: 'running', startedAt: new Date().toISOString(), agent: actor.agent,
           model: actor.model, effort: actor.effort });
+        const activity = { step, agent: actor.agent, round: stepState.round };
+        note({ kind: 'step_started', ...activity }, task);
         await save();
         const started = Date.now();
         const assistant = [];
@@ -127,6 +137,7 @@ export async function createService({ stateDir, env = process.env, cwd = process
         let outcome;
         let promptPath;
         let spec;
+        let summaries = 0;
         const safePrompt = store.redact(prompt);
         try {
           const { adapter, info, env: childEnv } = await registry.get(actor);
@@ -160,6 +171,11 @@ export async function createService({ stateDir, env = process.env, cwd = process
                 const separator = notes.text && !event.delta ? '\n\n' : '';
                 if (room > 0) notes.text += (separator + event.text).slice(0, room);
                 thinking.set(step, notes);
+                // ponytail: show up to four public summaries per attempt. The event log retains the rest.
+                if (event.publicSummary && summaries++ < 4) {
+                  note({ kind: 'progress', ...activity }, event.text);
+                  save().catch(error => { emit({ type: 'error', step, text: error.message }); });
+                }
               }
               sessionId = adapter.parseSessionId?.(event) || sessionId;
               if (event.type === 'assistant' && typeof event.text === 'string') {
@@ -198,6 +214,11 @@ export async function createService({ stateDir, env = process.env, cwd = process
         const noAnswer = !failed && answer === 'CLI returned no usable final answer.';
         Object.assign(stepState, { status: failed || noAnswer ? 'FAILED' : 'PASS',
           finishedAt: new Date().toISOString(), durationMs: outcome?.durationMs ?? Date.now() - started });
+        if (kind !== 'A') {
+          const status = controller.signal.aborted ? 'cancelled' : stepState.status;
+          note({ kind: 'step_finished', ...activity, status, mode: kind,
+            reasoningTokens: stepState.tokens?.reasoningTokens }, status === 'FAILED' ? answer : undefined);
+        }
         await save();
         return { failed: failed || noAnswer, answer, assistant, sessionId };
       },
@@ -240,9 +261,12 @@ export async function createService({ stateDir, env = process.env, cwd = process
       ].filter(Boolean).join('\n\n') + '\n';
       await store.writeText(join(root, 'report.md'), report);
       Object.assign(state, result, { finishedAt: new Date().toISOString() });
+      note({ kind: 'run_finished', status: result.status }, kind !== 'A' || result.status === 'FAILED' ? result.answer : undefined);
       await save();
     }).catch(async error => {
       Object.assign(state, { status: 'FAILED', answer: store.redact(error.message), finishedAt: new Date().toISOString() });
+      if (state.timeline.at(-1)?.kind === 'run_finished') state.timeline.pop();
+      note({ kind: 'run_finished', status: state.status }, state.answer);
       await save().catch(() => {});
       process.stderr.write('Agents-MCP could not finalize run ' + id + ': ' + state.answer + '\n');
     }).finally(() => runs.delete(id));
@@ -372,11 +396,32 @@ export async function createService({ stateDir, env = process.env, cwd = process
         return { status: ctx.signal.aborted ? 'cancelled' : result.failed ? 'FAILED' : 'PASS', answer: result.answer };
       })), ...enabledNotice() };
     },
-    async status({ runId } = {}) {
+    async status({ runId, after, waitMs = 0 } = {}) {
+      if (after !== undefined && !integer(after, 0, Number.MAX_SAFE_INTEGER)) {
+        throw problem('E_CURSOR', 'after must be a non-negative integer.');
+      }
+      if (!integer(waitMs, 0, 15_000) || (waitMs && after === undefined)) {
+        throw problem('E_WAIT', 'Use waitMs from 0 to 15000 with an after cursor.');
+      }
       const directory = store.runDir(runId);
-      const state = await store.readState(runId);
+      let state = await store.readState(runId);
       if (!state) throw problem('E_RUN_NOT_FOUND', 'Run not found.');
-      return { ...state, directory, reportPath: await store.hasReport(runId) ? join(directory, 'report.md') : null,
+      if (after !== undefined) {
+        const until = Date.now() + waitMs;
+        while (!state.finishedAt && after === (state.timeline?.length ?? 0) && Date.now() < until) {
+          await delay(Math.min(400, until - Date.now()));
+          state = await store.readState(runId);
+          if (!state) throw problem('E_RUN_NOT_FOUND', 'Run not found.');
+        }
+        const timeline = state.timeline ?? [];
+        if (after > timeline.length) throw problem('E_CURSOR', 'The cursor is past the end of this run.');
+        const page = timeline.slice(after, after + 12);
+        const timelineCursor = after + page.length;
+        const timelineHasMore = timelineCursor < timeline.length;
+        return { runId, status: state.status, finishedAt: state.finishedAt, timeline: page, timelineCursor,
+          timelineHasMore, answer: timelineHasMore ? undefined : state.answer };
+      }
+      return { ...state, timeline: state.timeline ?? [], directory, reportPath: await store.hasReport(runId) ? join(directory, 'report.md') : null,
         events: await store.recentEvents(runId), artifacts: (await store.list(join(directory, 'artifacts'))).filter(name => name.endsWith('.md')) };
     },
     async listRuns() {

@@ -47,13 +47,14 @@ export function createProtocol(service) {
     let isError = false;
     const progressToken = params._meta?.progressToken;
     const progress = typeof progressToken === 'string' || typeof progressToken === 'number';
-    const sendProgress = (count, text) => notify({ jsonrpc: '2.0', method: 'notifications/progress',
-      params: { progressToken, progress: count, total: 2, message: text } });
+    const watching = params.name === 'agents_status' && Object.hasOwn(params.arguments ?? {}, 'after');
+    const sendProgress = (count, text, total) => notify({ jsonrpc: '2.0', method: 'notifications/progress',
+      params: { progressToken, progress: count, total, message: text } });
     const started = Date.now();
     let toolName = params.name;
     let failed = false;
     let task = params.arguments?.task;
-    if (progress) sendProgress(1, 'Processing request');
+    if (progress) sendProgress(1, watching ? '读取协作消息' : 'Processing request', watching ? undefined : 2);
     try {
       const tool = tools.get(params.name);
       if (!tool) throw problem('E_TOOL', 'Unknown tool: ' + params.name, 'Call tools/list for the supported names.');
@@ -70,9 +71,17 @@ export function createProtocol(service) {
       data = errorInfo(error);
     }
     await service.noteCall?.({ tool: toolName, ok: !failed, ms: Date.now() - started, task });
-    if (progress) sendProgress(2, isError ? 'Request failed' : 'Request handled');
     // Gate replies already redact their free text and carry an opaque task ID.
     const structuredContent = Object.hasOwn(data, 'taskId') ? data : service.redact(data);
+    if (progress) {
+      const timeline = watching && !isError ? structuredContent.timeline ?? [] : [];
+      const total = timeline.length + 2;
+      timeline.forEach((event, index) => {
+        const detail = event.detail ? ' · ' + event.detail.replace(/\s+/g, ' ').slice(0, 160) : '';
+        sendProgress(index + 2, event.message + detail, total);
+      });
+      sendProgress(total, isError ? 'Request failed' : watching ? '协作消息读取完成' : 'Request handled', total);
+    }
     // Spoken, not inferred: the user asked to be told every time whether the server is on.
     if (object(structuredContent) && !Object.hasOwn(structuredContent, 'tellUser')) {
       structuredContent.tellUser = service.mcpEnabled?.() === false ? 'Agents-MCP 已停用' : 'Agents-MCP 已启用';
@@ -86,7 +95,8 @@ export function createProtocol(service) {
     // Both copies used to carry the whole payload; a big answer now says what it is and
     // leaves the detail in structuredContent, which halves the tokens such a call costs.
     const json = JSON.stringify(structuredContent);
-    const body = Buffer.byteLength(json, 'utf8') > textLimit ? summarize(params.name, structuredContent) : json;
+    const body = structuredContent.timelineCursor !== undefined || Buffer.byteLength(json, 'utf8') > textLimit
+      ? summarize(params.name, structuredContent) : json;
     return success({ structuredContent, isError, content: [{ type: 'text', text: body }] });
   };
 }

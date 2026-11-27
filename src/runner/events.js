@@ -30,13 +30,16 @@ function parsed(event) {
   const sessionId = [event.thread_id, event.session_id, event.conversation_id, event.sessionId, event.conversationId, event.threadId]
     .find(id => typeof id === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(id));
   if (type === 'item.completed' && item?.type === 'reasoning') {
-    return { type: 'reasoning', text: reasoningText(item.text ?? item.summary ?? item.content), sessionId };
+    const summary = reasoningText(item.summary);
+    return { type: 'reasoning', text: summary || reasoningText(item.text ?? item.content), sessionId,
+      ...(summary && { publicSummary: true }) };
   }
   if (reasoningTypes.has(type)) {
     // A delta chunk continues the previous text; the renderers rely on this to avoid blank lines.
     const delta = type.endsWith('_delta');
     return { type: 'reasoning', text: reasoningText(event.text ?? event.delta ?? event.content
-      ?? event.reasoning_content ?? event.thinking), sessionId, ...(delta && { delta }) };
+      ?? event.summary ?? event.reasoning_content ?? event.thinking), sessionId, ...(delta && { delta }),
+      ...(type === 'reasoning_summary' && { publicSummary: true }) };
   }
   if (type === 'result') {
     return {

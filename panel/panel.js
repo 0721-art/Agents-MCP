@@ -429,6 +429,11 @@ function renderDraftActor() {
     })), field('思考强度', select((model?.efforts ?? []).map(value => [value, value]), draftActor.effort, value => { draftActor.effort = value; })));
   }
   wrapper.replaceChildren(...fields);
+  const note = $('draft-note');
+  if (note) {
+    const label = agent ? agent.models.find(entry => entry.id === draftActor.model)?.label ?? draftActor.model : '';
+    note.textContent = agent ? `${agent.name} · ${label} · ${draftActor.effort || '默认强度'}` : '使用每个参与者自己的 Agent';
+  }
 }
 function draftPerson(person) {
   return draftActor.agent
@@ -1928,7 +1933,7 @@ function renderRunsEmptyDetail() {
   runDetailState = null;
   $('run-detail').replaceChildren(group('empty',
     el('p', '选择一条运行记录', 'empty-title'),
-    el('p', '从左侧选择一条运行记录查看路由图、步骤与思考过程，或去模式 A 发起一次。', 'hint'),
+    el('p', '从左侧选择一条运行记录查看协作对话，或去模式 A 发起一次。', 'hint'),
     button('去模式 A 发起一次', () => switchTab('flow'), 'btn-primary btn-sm')));
 }
 
@@ -1946,6 +1951,17 @@ function createRunDetailSkeleton(runId) {
     group('stat', el('span', '运行 ID', 'stat-label'), statId),
     group('stat', el('span', '耗时', 'stat-label'), statDur),
     group('stat', el('span', '工作目录', 'stat-label'), statCwd));
+
+  const conversation = el('ol', undefined, 'conversation');
+  conversation.setAttribute('aria-label', '协作消息');
+  conversation.setAttribute('aria-live', 'polite');
+  conversation.tabIndex = 0;
+  conversation.hidden = true;
+  const conversationEmpty = el('p', '等待协作消息…', 'hint');
+  const jumpToLatest = button('跳到最新', () => { conversation.scrollTop = conversation.scrollHeight; }, 'btn-sm');
+  jumpToLatest.hidden = true;
+  const conversationSection = group('section-block',
+    group('conversation-toolbar', el('h3', '协作对话', 'section-title'), jumpToLatest), conversationEmpty, conversation);
 
   const routeFigure = el('figure', undefined, 'route route-embedded');
   routeFigure.dataset.route = 'run';
@@ -1987,10 +2003,11 @@ function createRunDetailSkeleton(runId) {
   }, 'btn-danger'));
   cancelWrap.hidden = true;
 
-  $('run-detail').replaceChildren(head, stats, routeFigure, stepsSection, thinkingSection, treeSection, logSection, linksSection, cancelWrap);
+  $('run-detail').replaceChildren(head, stats, conversationSection, routeFigure, stepsSection, thinkingSection, treeSection, logSection, linksSection, cancelWrap);
 
   return {
     runId, titleEl, statusPill, statKind, statId, statDur, statCwd,
+    conversation, conversationEmpty, jumpToLatest,
     routeFigure, tableBody, thinkingWrap, thinkingRefs: new Map(),
     treeSection, treeWrap, logPre, linksSection, linksList, cancelWrap,
     lastLogText: '等待事件…', lastStepsSig: '', lastTreeSig: '', lastLinksSig: '',
@@ -2081,6 +2098,30 @@ async function loadRun(id) {
   s.statId.textContent = run.runId;
   s.statDur.textContent = formatDuration(runDurationMs(run));
   s.statCwd.textContent = run.cwd || '—';
+
+  const timeline = run.timeline ?? [];
+  const conversation = s.conversation;
+  const shown = conversation.childElementCount;
+  if (timeline.length > shown) {
+    const follow = shown ? conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 32 : !run.finishedAt;
+    const rows = document.createDocumentFragment();
+    for (const event of timeline.slice(shown)) {
+      const item = el('li', undefined, 'conversation-item');
+      item.dataset.kind = event.kind;
+      const time = el('time', formatClock(event.at), 'mono');
+      time.dateTime = event.at;
+      item.append(group('conversation-head', el('strong', event.message), time));
+      if (event.detail) item.append(el('p', event.detail));
+      rows.append(item);
+    }
+    conversation.append(rows);
+    conversation.hidden = false;
+    s.conversationEmpty.hidden = true;
+    s.jumpToLatest.hidden = false;
+    if (follow) conversation.scrollTop = conversation.scrollHeight;
+  } else if (!shown && run.finishedAt) {
+    s.conversationEmpty.textContent = '这条历史运行可在下方查看步骤与事件。';
+  }
 
   // Update persistent routing graph without restarting active packet animations
   renderRouting(s.routeFigure, buildRunRouting(run, flowPlans.get(id)));

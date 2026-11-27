@@ -146,6 +146,7 @@ export const verdictSchema = {
 
 export async function executeFlow(ctx, flow, plan) {
   const { steps, participants, effective, loops, deps, order } = plan;
+  const actorFor = id => participants.get(steps.get(id).participant);
   const pending = new Set(order);
   const active = new Map();
   const answers = new Map();
@@ -158,9 +159,16 @@ export async function executeFlow(ctx, flow, plan) {
 
   async function execute(id) {
     const step = steps.get(id);
-    const actor = participants.get(step.participant);
-    const inputs = [...ancestors(id, deps)].flatMap(parent => artifacts.get(parent) ?? [])
-      .filter(entry => !step.inputs?.length || step.inputs.includes(entry.name));
+    const actor = actorFor(id);
+    const round = ctx.state.steps[id].round;
+    const inputs = [...ancestors(id, deps)].flatMap(parent => {
+      const entries = (artifacts.get(parent) ?? []).filter(entry => !step.inputs?.length || step.inputs.includes(entry.name));
+      if (entries.length) {
+        ctx.note({ kind: 'handoff', from: parent, fromAgent: actorFor(parent).agent, to: id, toAgent: actor.agent, round },
+          entries.map(entry => entry.file).join('\n'));
+      }
+      return entries;
+    });
     // The text travels with the prompt: a sandboxed agent may only read inside its working
     // directory, and a handoff it cannot read is a handoff that never happened.
     const attachments = inputs.map(entry => '### ' + entry.name + ' — ' + entry.path + '\n' + entry.text).join('\n\n');
@@ -169,7 +177,7 @@ export async function executeFlow(ctx, flow, plan) {
       feedback.get(id) && 'Reviewer feedback:\n' + feedback.get(id),
       'Finish with a final line: VERDICT: PASS, VERDICT: CHANGES_REQUESTED, or VERDICT: BLOCKED. If a response schema is supplied, use its status and report fields.',
     ].filter(Boolean).join('\n\n');
-    const result = await ctx.invoke(id, actor, prompt, { schema: verdictSchema });
+    const result = await ctx.invoke(id, actor, prompt, { schema: verdictSchema, task: step.task });
     const final = result.failed ? { status: 'FAILED', answer: result.answer } : verdict(result.answer, loops.has(id));
     if (final.warning) ctx.state.warnings.push(id + ': ' + final.warning);
     await ctx.transcript(id, prompt, final.answer);
@@ -177,13 +185,17 @@ export async function executeFlow(ctx, flow, plan) {
     if (final.status === 'PASS') {
       const entries = [];
       for (const name of step.produces ?? []) {
-        const path = await ctx.artifact(id + '-' + name + '.md', final.answer);
-        entries.push({ name, path, text: final.answer.slice(0, 24_000) + (final.answer.length > 24_000 ? '\n\n…(truncated)' : ''),
+        const file = id + '-' + name + '.md';
+        const path = await ctx.artifact(file, final.answer);
+        entries.push({ name, file, path, text: final.answer.slice(0, 24_000) + (final.answer.length > 24_000 ? '\n\n…(truncated)' : ''),
           summary: final.answer.replace(/\s+/g, ' ').slice(0, 180) });
       }
       artifacts.set(id, entries);
     }
     ctx.state.steps[id].status = final.status;
+    ctx.note({ kind: 'step_finished', step: id, agent: actor.agent, round,
+      status: ctx.signal.aborted && result.failed ? 'cancelled' : final.status,
+      reasoningTokens: ctx.state.steps[id].tokens?.reasoningTokens }, final.answer);
     const loop = loops.get(id);
     if (loop && final.status === 'CHANGES_REQUESTED' && !ctx.signal.aborted) {
       const used = rounds.get(id);
@@ -192,6 +204,8 @@ export async function executeFlow(ctx, flow, plan) {
         rounds.set(id, used + 1);
         feedback.set(loop.to, final.answer);
         await Promise.all([...loop.region].flatMap(key => (artifacts.get(key) ?? []).map(entry => ctx.removeArtifact(entry.path))));
+        ctx.note({ kind: 'review', from: id, fromAgent: actor.agent, to: loop.to, toAgent: actorFor(loop.to).agent,
+          round: ctx.state.steps[loop.to].round + 1 }, final.answer);
         for (const key of loop.region) {
           pending.add(key);
           ctx.state.steps[key] = { status: 'pending', round: ctx.state.steps[key].round + 1 };
@@ -210,8 +224,11 @@ export async function executeFlow(ctx, flow, plan) {
         const parents = effective.get(id);
         if (active.has(id) || parents.some(parent => active.has(parent) || pending.has(parent))) continue;
         pending.delete(id);
-        if (parents.some(parent => ctx.state.steps[parent].status !== 'PASS')) {
+        const stopped = parents.filter(parent => ctx.state.steps[parent].status !== 'PASS');
+        if (stopped.length) {
           ctx.state.steps[id].status = 'SKIPPED';
+          ctx.note({ kind: 'step_finished', step: id, agent: actorFor(id).agent, round: ctx.state.steps[id].round,
+            status: 'SKIPPED' }, '依赖未通过 · ' + stopped.join('、'));
           continue;
         }
         active.set(id, execute(id).then(() => ({ id }), error => ({ id, error })));

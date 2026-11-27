@@ -183,10 +183,40 @@ test('gate persists and Mode A hands off artifacts through a review loop', async
   await assert.rejects(service.runFlow({ ...flow, task: 'Changed task', taskId: pending.taskId }), { code: 'E_TASK_ID' });
   const restarted = await open(dir);
   const { runId } = await restarted.runFlow(flow);
+  const first = await service.status({ runId, after: 0 });
+  const update = await service.status({ runId, after: first.timelineCursor, waitMs: 3000 });
+  assert.ok(update.timeline.length || update.finishedAt);
   const result = await finish(restarted, runId);
   assert.equal(result.status, 'PASS');
   assert.equal(result.steps.review.round, 2);
   assert.ok(result.artifacts.includes('write-patch.md'));
+  assert.deepEqual(result.timeline.filter(event => event.kind === 'handoff' || event.kind === 'review')
+    .map(event => [event.kind, event.from, event.to, event.round, event.detail]), [
+    ['handoff', 'write', 'review', 1, 'write-patch.md'],
+    ['review', 'review', 'write', 2, 'Please revise the patch.'],
+    ['handoff', 'write', 'review', 2, 'write-patch.md'],
+  ]);
+  assert.equal(result.timeline.at(-1).kind, 'run_finished');
+  const protocol = createProtocol(await open(dir));
+  const messages = [];
+  let after = 0;
+  let page;
+  do {
+    const progress = [];
+    const reply = await protocol({ jsonrpc: '2.0', id: 1, method: 'tools/call',
+      params: { name: 'agents_status', arguments: { runId, after }, _meta: { progressToken: 'watch' } } },
+    event => progress.push(event.params));
+    page = reply.result.structuredContent;
+    assert.equal(reply.result.isError, false);
+    assert.match(reply.result.content[0].text, /协作/);
+    assert.equal(page.timelineCursor, after + page.timeline.length);
+    assert.deepEqual(progress.map(event => event.progress), Array.from({ length: page.timeline.length + 2 }, (_, i) => i + 1));
+    page.timeline.forEach((event, i) => assert.ok(progress[i + 1].message.startsWith(event.message)));
+    messages.push(...page.timeline);
+    after = page.timelineCursor;
+  } while (page.timelineHasMore);
+  assert.deepEqual(messages, result.timeline);
+  assert.deepEqual((await restarted.status({ runId, after })).timeline, []);
   assert.match(await readFile(result.reportPath, 'utf8'), /PASS/);
   assert.equal((await restarted.runFlow({ ...flow, task: 'Other task' })).status, 'confirmation_required');
   await restarted.setConfig({ gate: { modeA: false } });
@@ -207,10 +237,12 @@ test('a run keeps each agent reasoning beside its answer', async t => {
   const { runId } = await service.runFlow(single);
   const result = await finish(service, runId);
   const reasoning = result.events.filter(event => event.type === 'reasoning').map(event => [event.step, event.text]);
-  assert.deepEqual(reasoning, [['write', 'Fixture reasons about the task.']]);
+  assert.deepEqual(reasoning, [['write', 'Fixture reasons about the task.'], ['write', 'Fixture summary for the user.']]);
   assert.equal(result.steps.write.tokens.reasoningTokens, 42);
+  assert.deepEqual(result.timeline.filter(event => event.kind === 'progress').map(event => event.detail),
+    ['Fixture summary for the user.']);
   const transcript = await readFile(join(dir, 'runs', runId, 'steps', 'write.md'), 'utf8');
-  assert.match(transcript, /# Thinking\n\nFixture reasons about the task\.\n\n# Answer/);
+  assert.match(transcript, /# Thinking\n\nFixture reasons about the task\.\n\nFixture summary for the user\.\n\n# Answer/);
 });
 
 test('a review loop starts the re-run step with fresh reasoning', async t => {
@@ -276,7 +308,7 @@ test('Mode A previews review barriers and answers from the effective terminal st
   const seen = [];
   const context = () => ({
     state: { steps: {}, warnings: [] }, config: { maxParallel: 1 }, signal: new AbortController().signal,
-    save: async () => {}, transcript: async () => {}, artifact: async name => name,
+    save: async () => {}, note: () => {}, transcript: async () => {}, artifact: async name => name,
     async invoke(id) {
       seen.push(id);
       return id === 'check' ? { failed: true, answer: 'failed check' } : { answer: id + ' answer\nVERDICT: PASS' };
@@ -318,7 +350,7 @@ test('Mode A aborts an active sibling before unwinding a failed step', async () 
   try {
     await assert.rejects(executeFlow({
       state: { steps: {}, warnings: [] }, config: { maxParallel: 2 }, signal: controller.signal,
-      abort: () => { abortedSibling = true; controller.abort(); }, save: async () => {}, transcript: async () => {},
+      abort: () => { abortedSibling = true; controller.abort(); }, save: async () => {}, note: () => {}, transcript: async () => {},
       async invoke(id) {
         if (id === 'broken') throw new Error('step failed');
         await new Promise(resolve => controller.signal.addEventListener('abort', resolve, { once: true }));
@@ -339,6 +371,12 @@ test('Mode B enforces delegation caps and resumes with worker results', async (t
   assert.equal(result.status, 'PASS');
   assert.equal(result.delegations, 2);
   assert.deepEqual(result.delegationTree.map(edge => [edge.parent, edge.status]), [['main', 'PASS'], ['main', 'PASS']]);
+  for (const { id } of result.delegationTree) {
+    const sent = result.timeline.findIndex(event => event.kind === 'delegate' && event.from === 'main' && event.to === id);
+    const back = result.timeline.findIndex(event => event.kind === 'delegation_result' && event.from === id && event.to === 'main');
+    const resumed = result.timeline.findIndex(event => event.kind === 'step_started' && event.step === 'main-r2');
+    assert.ok(sent >= 0 && sent < back && back < resumed);
+  }
   assert.match(await readFile(result.reportPath, 'utf8'), /resumed.*cap/s);
 });
 
@@ -396,7 +434,7 @@ test('a cancelled delegation reports cancelled rather than failed', async () => 
       controller.abort();
       return { failed: true, answer: 'Cancelled.', assistant: [] };
     },
-    transcript: async () => {}, save: async () => {}, stepPath: id => id, redact: text => text,
+    transcript: async () => {}, save: async () => {}, note: () => {}, stepPath: id => id, redact: text => text,
   };
   const result = await executeDispatch(ctx, { ...actor, task: 'Do work' },
     { maxDepth: 2, maxDelegations: 2, maxParallel: 1 });
@@ -507,6 +545,15 @@ test('HTTP serves the panel and shares gate and runs with MCP', async (t) => {
   const { runId } = await (await post('/api/flow/run', flow)).json();
   assert.equal((await finish(service, runId)).status, 'PASS');
   assert.ok((await get('/api/runs')).some(run => run.runId === runId));
+  const stream = await fetchLocal('/mcp', { method: 'POST', headers: {
+    'Content-Type': 'application/json', 'Mcp-Session-Id': session, Accept: 'text/event-stream',
+  }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: {
+    name: 'agents_status', arguments: { runId, after: 0 }, _meta: { progressToken: 'conversation' },
+  } }) });
+  const packets = (await stream.text()).split('\n').filter(line => line.startsWith('data: '))
+    .map(line => JSON.parse(line.slice(6)));
+  assert.ok(packets.some(event => event.method === 'notifications/progress' && event.params.message.includes('传递产物')));
+  assert.equal(packets.at(-1).result.structuredContent.runId, runId);
   const draft = await (await post('/api/draft-role', { ...actor, brief: 'Review changes' })).json();
   assert.match((await finish(service, draft.runId)).answer, /Review changes/);
 });

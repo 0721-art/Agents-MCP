@@ -1037,9 +1037,28 @@ textarea {
 }
 
 /* Mode A editors */
+.draft-card {
+  border-left: 3px solid var(--accent, #4c8df6);
+  background: var(--surface-2, #f7f9fc);
+}
+
+.draft-note {
+  font-size: var(--fs-xs, 12px);
+  color: var(--muted);
+  background: var(--surface, #fff);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
 .draft-bar {
-  padding-bottom: var(--sp-3);
-  border-bottom: 1px solid var(--line);
+  padding-top: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.draft-bar:empty {
+  display: none;
 }
 
 .editor-row {
@@ -1310,6 +1329,63 @@ textarea {
 .col-status { width: 24%; }
 .col-round { width: 16%; }
 .col-duration { width: 20%; }
+
+/* Collaboration conversation */
+.conversation-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.conversation {
+  display: grid;
+  gap: var(--sp-2);
+  max-height: 28rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--sp-2);
+  list-style: none;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.conversation-item {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+
+.conversation-item:is([data-kind="handoff"], [data-kind="delegate"], [data-kind="delegation_result"]) {
+  border-inline-start-color: var(--accent);
+}
+
+.conversation-item[data-kind="review"] {
+  border-inline-start-color: var(--warn);
+}
+
+.conversation-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-1) var(--sp-3);
+}
+
+.conversation-head time,
+.conversation-item p {
+  color: var(--fg-2);
+  font-size: var(--fs-13);
+}
+
+.conversation-item p {
+  margin: var(--sp-1) 0 0;
+  white-space: pre-wrap;
+}
 
 /* Thinking disclosures */
 .thinking-list {
