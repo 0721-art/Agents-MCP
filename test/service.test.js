@@ -190,6 +190,7 @@ test('gate persists and Mode A hands off artifacts through a review loop', async
   assert.equal(result.status, 'PASS');
   assert.equal(result.steps.review.round, 2);
   assert.ok(result.artifacts.includes('write-patch.md'));
+  assert.match(await readFile(join(result.directory, 'steps', 'write.md'), 'utf8'), /请使用简体中文/);
   assert.deepEqual(result.timeline.filter(event => event.kind === 'handoff' || event.kind === 'review')
     .map(event => [event.kind, event.from, event.to, event.round, event.detail]), [
     ['handoff', 'write', 'review', 1, 'write-patch.md'],
@@ -338,6 +339,41 @@ test('Mode A rejects nested review regions with an overlap error', async () => {
   assert.match(plan.errors[0].message, /review regions overlap/i);
 });
 
+test('Mode A sends identical artifact bodies once and keeps every selected file', async () => {
+  const shared = '同一份产物正文\n  preserve code indentation\n'.repeat(80).trimEnd();
+  const distinct = '另一份独立产物';
+  const definition = { task: '整合交付', participants: [{ id: 'author', ...actor }], steps: [
+    { id: 'write', participant: 'author', task: '写资料', produces: ['notes', 'copy', 'unused'] },
+    { id: 'backup', participant: 'author', task: '准备副本', produces: ['backup'] },
+    { id: 'check', participant: 'author', task: '单独核对', produces: ['check'] },
+    { id: 'merge', participant: 'author', task: '整合', dependsOn: ['write', 'backup', 'check'],
+      inputs: ['notes', 'copy', 'backup', 'check'] },
+  ] };
+  const plan = await validateFlow(definition, { get: async () => {} });
+  assert.equal(plan.ok, true);
+  const prompts = new Map();
+  const files = new Map();
+  const result = await executeFlow({
+    state: { steps: {}, warnings: [] }, config: { maxParallel: 2 }, signal: new AbortController().signal,
+    save: async () => {}, note: () => {}, transcript: async () => {},
+    async artifact(name, body) { const path = 'artifacts/' + name; files.set(path, body); return path; },
+    async invoke(id, _actor, prompt) {
+      prompts.set(id, prompt);
+      return { answer: (id === 'check' ? distinct : id === 'merge' ? '合并完成' : shared) + '\nVERDICT: PASS' };
+    },
+  }, definition, plan);
+  assert.equal(result.answer, '合并完成');
+  const prompt = prompts.get('merge');
+  for (const file of ['write-notes.md', 'write-copy.md', 'backup-backup.md', 'check-check.md']) {
+    assert.ok(prompt.includes('artifacts/' + file), file);
+  }
+  assert.equal(prompt.includes('write-unused.md'), false);
+  assert.equal(prompt.split(shared).length - 1, 1);
+  assert.ok(prompt.includes(distinct));
+  assert.equal(files.get('artifacts/write-unused.md'), shared);
+  assert.equal(files.get('artifacts/write-copy.md'), shared);
+});
+
 test('Mode A aborts an active sibling before unwinding a failed step', async () => {
   const definition = { ...flow, loops: [], steps: [
     { id: 'broken', participant: 'author', task: 'Broken' },
@@ -384,6 +420,29 @@ test('Mode B parses protocol blocks containing Unicode line and paragraph separa
   const data = { task: 'one\u2028two\u2029three' };
   const line = '@@AGENTS_MCP delegate ' + JSON.stringify(data);
   assert.deepEqual(parseBlocks(line), [{ kind: 'delegate', data }]);
+});
+
+test('Mode B replays full results with one instruction block for a non-resumable CLI', async () => {
+  const prompts = new Map();
+  const delegate = task => '@@AGENTS_MCP delegate ' + JSON.stringify({ to: actor.agent, model: actor.model, effort: actor.effort, task });
+  const first = '先确认背景\n' + delegate('First check');
+  const second = '接着核对细节\n' + delegate('Second check');
+  const replies = new Map([['main', first], ['main-r2', second], ['d1-fixture', 'First worker result'],
+    ['d2-fixture', 'Second worker result'], ['main-r3', '@@AGENTS_MCP report {"summary":"核对完成"}']]);
+  const result = await executeDispatch({
+    state: { warnings: [] }, config: { strengths: {} }, signal: new AbortController().signal,
+    registry: { list: async () => [{ id: actor.agent, available: true, models: [{ id: actor.model, efforts: [actor.effort] }] }],
+      get: async () => ({ adapter: {} }) },
+    transcript: async () => {}, save: async () => {}, note: () => {}, stepPath: id => 'steps/' + id + '.md', redact: value => value,
+    async invoke(step, _actor, prompt) { prompts.set(step, prompt); return { answer: replies.get(step), sessionId: 'fixture', assistant: [] }; },
+  }, { ...actor, task: '核对两个事项' }, { maxDepth: 1, maxDelegations: 2, maxParallel: 1 });
+  assert.equal(result.answer, '核对完成');
+  const replay = prompts.get('main-r3');
+  for (const content of [first, second, 'First worker result', 'Second worker result', 'Task:\n核对两个事项', actor.model + ' (low)']) {
+    assert.ok(replay.includes(content), content);
+  }
+  assert.equal(replay.split('Use one line for each delegation.').length - 1, 1);
+  assert.equal(replay.split('请使用简体中文').length - 1, 1);
 });
 
 test('role drafting is asynchronous and captured output and configuration protect secrets', async (t) => {
@@ -519,6 +578,7 @@ test('HTTP serves the panel and shares gate and runs with MCP', async (t) => {
       assert.match(content, /data-tab="conversation" aria-controls="conversation"/);
       assert.match(content, /<section id="conversation" class="page" hidden>/);
       assert.ok(content.includes('class="conversation-window"'), 'the conversation has its own chat surface');
+      assert.ok(content.includes('id="conversation-step-template"'), 'the conversation groups messages by workflow step');
     }
   }
   const init = await post('/mcp', { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
@@ -557,6 +617,9 @@ test('HTTP serves the panel and shares gate and runs with MCP', async (t) => {
   assert.equal(actorMessage.model, flow.participants[0].model);
   assert.equal(actorMessage.effort, flow.participants[0].effort);
   assert.equal(actorMessage.role, flow.participants[0].role);
+  assert.equal(initialMessages.steps.write.task, flow.steps[0].task);
+  assert.equal(initialMessages.steps.write.position, 0);
+  assert.equal(initialMessages.steps.review.round, 2);
   const nextMessages = await get('/api/runs/' + runId + '?after=' + initialMessages.timelineCursor);
   assert.equal(nextMessages.timelineCursor, initialMessages.timelineCursor + nextMessages.timeline.length);
   assert.ok(!Object.hasOwn(nextMessages, 'events'));

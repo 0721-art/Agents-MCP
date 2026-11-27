@@ -147,6 +147,11 @@ export const verdictSchema = {
 export async function executeFlow(ctx, flow, plan) {
   const { steps, participants, effective, loops, deps, order } = plan;
   const actorFor = id => participants.get(steps.get(id).participant);
+  const pendingStep = (id, round) => {
+    const { agent, model, effort, role } = actorFor(id);
+    return { status: 'pending', round, position: order.indexOf(id), agent, model, effort, role: role?.trim().slice(0, 120),
+      task: steps.get(id).task.trim().slice(0, 240) };
+  };
   const pending = new Set(order);
   const active = new Map();
   const answers = new Map();
@@ -154,27 +159,39 @@ export async function executeFlow(ctx, flow, plan) {
   const feedback = new Map();
   const rounds = new Map([...loops.keys()].map(id => [id, 1]));
   let exhausted = false;
-  for (const id of order) ctx.state.steps[id] = { status: 'pending', round: 1 };
+  for (const id of order) ctx.state.steps[id] = pendingStep(id, 1);
   await ctx.save();
 
   async function execute(id) {
     const step = steps.get(id);
     const actor = actorFor(id);
     const round = ctx.state.steps[id].round;
-    const inputs = [...ancestors(id, deps)].flatMap(parent => {
+    const filesByContent = new Map();
+    for (const parent of ancestors(id, deps)) {
       const entries = (artifacts.get(parent) ?? []).filter(entry => !step.inputs?.length || step.inputs.includes(entry.name));
-      if (entries.length) {
-        ctx.note({ kind: 'handoff', from: parent, fromAgent: actorFor(parent).agent, to: id, toAgent: actor.agent, round },
-          entries.map(entry => entry.file).join('\n'));
-      }
-      return entries;
-    });
+      if (!entries.length) continue;
+      ctx.note({ kind: 'handoff', from: parent, fromAgent: actorFor(parent).agent, to: id, toAgent: actor.agent, round },
+        entries.map(entry => entry.file).join('\n'));
+      const answer = answers.get(parent);
+      const files = filesByContent.get(answer) ?? [];
+      files.push(...entries);
+      filesByContent.set(answer, files);
+    }
     // The text travels with the prompt: a sandboxed agent may only read inside its working
     // directory, and a handoff it cannot read is a handoff that never happened.
-    const attachments = inputs.map(entry => '### ' + entry.name + ' — ' + entry.path + '\n' + entry.text).join('\n\n');
+    const attachments = [...filesByContent].map(([answer, files]) => {
+      const text = answer.slice(0, 24_000) + (answer.length > 24_000 ? '\n\n…(truncated)' : '');
+      const labels = files.map(entry => entry.name + ' — ' + entry.path);
+      const heading = '### Files with identical content:\n';
+      if (labels.length > 1 && text.length >= heading.length) {
+        return heading + labels.map(label => '- ' + label).join('\n') + '\n\n' + text;
+      }
+      return labels.map(label => '### ' + label + '\n' + text).join('\n\n');
+    }).join('\n\n');
     const prompt = ['Task:\n' + flow.task, 'Step:\n' + step.task, 'Role: ' + (actor.role || actor.id),
       actor.responsibility && 'Responsibility:\n' + actor.responsibility, attachments && 'Upstream artifacts:\n' + attachments,
       feedback.get(id) && 'Reviewer feedback:\n' + feedback.get(id),
+      '面向用户的回复、进展摘要、评审反馈和交接说明请使用简体中文。代码、文件名和协议字段保留原样。',
       'Finish with a final line: VERDICT: PASS, VERDICT: CHANGES_REQUESTED, or VERDICT: BLOCKED. If a response schema is supplied, use its status and report fields.',
     ].filter(Boolean).join('\n\n');
     const result = await ctx.invoke(id, actor, prompt, { schema: verdictSchema, task: step.task });
@@ -187,8 +204,7 @@ export async function executeFlow(ctx, flow, plan) {
       for (const name of step.produces ?? []) {
         const file = id + '-' + name + '.md';
         const path = await ctx.artifact(file, final.answer);
-        entries.push({ name, file, path, text: final.answer.slice(0, 24_000) + (final.answer.length > 24_000 ? '\n\n…(truncated)' : ''),
-          summary: final.answer.replace(/\s+/g, ' ').slice(0, 180) });
+        entries.push({ name, file, path });
       }
       artifacts.set(id, entries);
     }
@@ -208,7 +224,7 @@ export async function executeFlow(ctx, flow, plan) {
           round: ctx.state.steps[loop.to].round + 1 }, final.answer);
         for (const key of loop.region) {
           pending.add(key);
-          ctx.state.steps[key] = { status: 'pending', round: ctx.state.steps[key].round + 1 };
+          ctx.state.steps[key] = pendingStep(key, ctx.state.steps[key].round + 1);
           artifacts.delete(key);
           answers.delete(key);
         }

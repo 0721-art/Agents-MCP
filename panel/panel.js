@@ -2288,9 +2288,70 @@ function conversationThinking(turn, event) {
   const { summary, notes } = turn.thinking;
   if (event.kind === 'progress' && event.detail) notes.append(el('p', event.detail));
   const count = notes.childElementCount;
-  const tokens = Number.isFinite(event.reasoningTokens) ? `${event.reasoningTokens} tokens` : '';
+  const tokens = Number.isFinite(event.reasoningTokens) ? `${event.reasoningTokens} 个词元` : '';
   summary.textContent = ['思考过程', count && `${count} 条摘要`, tokens].filter(Boolean).join(' · ');
-  if (!count && tokens) notes.append(el('p', '该 Agent 的 CLI 仅返回思考用量。'));
+  if (!count && event.kind === 'step_finished') {
+    notes.append(el('p', tokens ? '这个步骤仅返回了思考用量。' : '这个步骤暂无可显示的思考摘要。'));
+  }
+}
+
+const effortLabels = { off: '关闭', none: '关闭', minimal: '最低', low: '低', medium: '中', high: '高',
+  xhigh: '很高', max: '最高', ultra: '极高', auto: '自动' };
+const roleLabels = { researcher: '调研员', writer: '撰写员', reviewer: '评审员', planner: '规划员',
+  implementer: '执行员', tester: '测试员', coordinator: '协调员' };
+const conversationRole = role => Object.hasOwn(roleLabels, role?.toLowerCase()) ? roleLabels[role.toLowerCase()] : role;
+
+function conversationStep(view, id) {
+  if (!view.steps.has(id)) {
+    const item = $('conversation-step-template').content.firstElementChild.cloneNode(true);
+    item.dataset.stepId = id;
+    const slot = key => item.querySelector('[data-step-' + key + ']');
+    const number = '第 ' + (view.steps.size + 1) + ' 步';
+    slot('number').textContent = number;
+    view.steps.set(id, { item, number, title: slot('title'), actor: slot('actor'), status: slot('status'),
+      preview: slot('preview'), empty: slot('empty'), events: item.querySelector('ol'), info: {} });
+    view.board.append(item);
+  }
+  return view.steps.get(id);
+}
+
+function updateConversationStep(step, id, finished) {
+  const { agent, model, effort, role, task, round, status } = step.info;
+  const title = [conversationRole(role), task].filter(Boolean).join(' · ') || id;
+  const actor = [agentLabel(agent), model && '模型 ' + model,
+    effort && '思考强度 ' + (Object.hasOwn(effortLabels, effort) ? effortLabels[effort] : effort),
+    round > 1 && '第 ' + round + ' 轮'].filter(Boolean).join(' · ') || '等待智能体接手';
+  if (step.title.textContent !== title) step.title.textContent = step.title.title = title;
+  if (step.actor.textContent !== actor) step.actor.textContent = step.actor.title = actor;
+  updateBadge(step.status, status ?? 'pending', 'run');
+  step.empty.hidden = Boolean(step.events.childElementCount);
+  step.preview.hidden = finished || !step.preview.textContent;
+}
+
+const transferLabels = { handoff: '产物交接', review: '退回修改', delegate: '下发委派', delegation_result: '交回结果' };
+
+function conversationTransfer(view, event) {
+  const from = conversationStep(view, event.from);
+  const to = conversationStep(view, event.to);
+  from.info.agent ??= event.fromAgent;
+  to.info.agent ??= event.toAgent;
+  if (event.kind === 'delegate') to.info.task ??= event.detail;
+  const sender = [from.number, conversationRole(from.info.role)].filter(Boolean).join(' ');
+  const receiver = [to.number, conversationRole(to.info.role)].filter(Boolean).join(' ');
+  const line = sender + ' → ' + receiver;
+  const label = transferLabels[event.kind] ?? '交接';
+  for (const [step, direction] of [[from, '交出'], [to, '收到']]) {
+    step.turn = null;
+    const transfer = el('li', undefined, 'conversation-transfer');
+    transfer.dataset.kind = event.kind;
+    transfer.append(group('conversation-byline', el('strong', label + ' · ' + direction), conversationTime(event.at)), el('p', line));
+    if (event.detail) transfer.append(conversationText(event.detail, 180));
+    step.events.append(transfer);
+    const excerpt = event.detail?.replace(/\s+/g, ' ').slice(0, 100);
+    step.preview.textContent = [label, line, excerpt].filter(Boolean).join(' · ');
+    step.preview.title = step.preview.textContent;
+  }
+  view.latest = to.item;
 }
 
 function renderConversation(run, view) {
@@ -2298,79 +2359,81 @@ function renderConversation(run, view) {
   const timeline = run.timeline ?? [];
   const follow = list.childElementCount
     ? list.scrollHeight - list.scrollTop - list.clientHeight < 32 : !run.finishedAt;
-  const rows = document.createDocumentFragment();
   if (!list.firstChild) {
     const task = conversationTurn('task', '任务', run.startedAt);
-    task.body.append(conversationText(run.task || run.runId));
-    rows.append(task.item);
+    task.body.append(conversationText(run.task || run.runId, 200));
+    const section = el('li', undefined, 'conversation-board');
+    view.board = el('ol', undefined, 'conversation-steps');
+    view.board.setAttribute('aria-label', '协作步骤');
+    view.board.setAttribute('role', 'list');
+    section.append(view.board);
+    list.append(task.item, section);
   }
+  const snapshots = Object.entries(run.steps ?? {}).sort(([, a], [, b]) =>
+    (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER));
+  for (const [id, info] of snapshots) Object.assign(conversationStep(view, id).info, info);
   for (const event of timeline) {
-    const agentReplied = event.kind === 'step_finished' && event.mode === 'B' && event.status === 'PASS';
-    if (event.kind === 'run_started' || (agentReplied && !Number.isFinite(event.reasoningTokens))) continue;
-    view.hasUpdates = true;
     if (event.kind === 'run_finished') {
-      view.turn = null;
-      rows.append(conversationResult(run, event.at, run.answer || event.detail, event.status));
+      view.latest = conversationResult(run, event.at, run.answer || event.detail, event.status);
+      list.append(view.latest);
       continue;
     }
     if (event.from && event.to) {
-      view.turn = null;
-      const activity = el('li', undefined, 'conversation-activity');
-      activity.dataset.kind = event.kind;
-      const marker = el('span', event.kind === 'review' ? '↶' : '↳', 'conversation-mark');
-      marker.setAttribute('aria-hidden', 'true');
-      const content = group('conversation-content', group('conversation-byline',
-        el('strong', event.message), conversationTime(event.at)));
-      if (event.detail) content.append(conversationText(event.detail, 180));
-      activity.append(marker, content);
-      rows.append(activity);
+      conversationTransfer(view, event);
       continue;
     }
-    const key = JSON.stringify([event.agent, event.step, event.round]);
-    const actor = view.actors.get(event.step) ?? {};
+    if (!event.step) continue;
+    const step = conversationStep(view, event.step);
+    const round = event.round ?? 1;
+    view.latest = step.item;
     if (event.kind === 'step_started') {
-      view.actors.set(event.step, { model: event.model ?? actor.model, effort: event.effort ?? actor.effort,
-        role: event.role ?? actor.role });
+      const { info } = step;
+      Object.assign(info, { agent: event.agent ?? info.agent, model: event.model ?? info.model,
+        role: event.role ?? info.role, effort: event.effort ?? info.effort, task: event.detail ?? info.task,
+        status: 'running', round });
     }
-    if (view.turn?.key !== key) {
-      const identity = view.actors.get(event.step) ?? actor;
-      const label = [identity.role, event.step, identity.model, identity.effort && '强度 ' + identity.effort,
-        event.round > 1 && '第 ' + event.round + ' 轮'].filter(Boolean).join(' · ');
-      const turn = conversationTurn('agent', agentLabel(event.agent) || 'Agent', event.at, label);
-      view.turn = { key, body: turn.body };
-      rows.append(turn.item);
+    if (step.turn?.round !== round) {
+      const item = el('li', undefined, 'conversation-step-turn');
+      const body = group('conversation-body');
+      item.append(group('conversation-byline', el('strong', '第 ' + round + ' 轮'), conversationTime(event.at)), body);
+      step.events.append(item);
+      step.turn = { round, body };
     }
     if (event.kind === 'step_finished') {
-      if (Number.isFinite(event.reasoningTokens)) conversationThinking(view.turn, event);
-      const status = agentReplied ? '已回复' : statusText(event.status, 'run');
-      if (event.detail && (event.status === 'PASS' || event.status === 'CHANGES_REQUESTED')) {
-        view.turn.body.append(conversationText(event.detail, 360,
-          status + (event.status === 'PASS' ? ' · 阶段结果' : ' · 评审反馈')));
-      } else {
-        view.turn.body.append(el('span', status, 'conversation-caption'));
-        if (event.detail) view.turn.body.append(conversationText(event.detail));
-      }
+      step.info.status = event.status;
+      conversationThinking(step.turn, event);
+      const reply = event.detail ? '回复 · ' : '';
+      step.turn.body.append(el('strong', reply + statusText(event.status, 'run')));
+      if (event.detail) step.turn.body.append(conversationText(event.detail));
     } else if (event.kind === 'progress' && event.detail) {
-      conversationThinking(view.turn, event);
-    } else if (event.detail && (event.kind !== 'step_started' || event.detail !== run.task)) {
-      view.turn.body.append(conversationText(event.detail));
+      conversationThinking(step.turn, event);
     } else if (event.kind === 'step_started') {
-      view.turn.body.append(el('span', '已接手任务', 'conversation-caption'));
+      step.turn.body.append(el('strong', '接手任务'));
+      if (event.detail) step.turn.body.append(conversationText(event.detail));
     }
   }
-  if (view.seen === undefined && !timeline.length && run.finishedAt && run.answer) {
-    rows.append(conversationResult(run, run.finishedAt, run.answer));
+  for (const [id, info] of snapshots) {
+    const step = view.steps.get(id);
+    step.info.status = info.status;
+    step.info.round = info.round;
   }
-  if (rows.childElementCount) list.append(rows);
+  if (view.seen === undefined && !timeline.length && run.finishedAt && run.answer) {
+    view.latest = conversationResult(run, run.finishedAt, run.answer);
+    list.append(view.latest);
+  }
   view.seen = run.timelineCursor ?? timeline.length;
   view.finished = Boolean(run.finishedAt && !run.timelineHasMore);
+  for (const [id, step] of view.steps) updateConversationStep(step, id, view.finished);
+  view.board.parentElement.hidden = !view.steps.size;
   const empty = $('conversation-empty');
-  empty.hidden = Boolean(view.hasUpdates);
+  empty.hidden = Boolean(view.steps.size || view.latest);
   const emptyText = view.finished ? '这次运行生成于协作对话上线前。' : '等待 Agent 接手…';
   if (!empty.hidden && empty.textContent !== emptyText) empty.textContent = emptyText;
   list.hidden = false;
-  $('conversation-latest').hidden = !view.hasUpdates;
-  if (follow) list.scrollTop = list.scrollHeight;
+  const jump = $('conversation-latest');
+  jump.hidden = !view.latest;
+  jump.textContent = view.latest?.dataset.kind === 'result' ? '查看最终结果' : '定位最新步骤';
+  if (follow && view.latest) view.latest.scrollIntoView({ block: 'nearest' });
 }
 
 async function loadConversation() {
@@ -2406,9 +2469,9 @@ async function loadConversation() {
   status.hidden = !run;
   if (run) updateBadge(status, run.status, 'run');
   if (!s.view || s.view.runId !== run?.runId) {
-    s.view = { runId: run?.runId, actors: new Map(), finished: false };
+    s.view = { runId: run?.runId, steps: new Map(), finished: false };
     const title = $('conversation-title');
-    title.textContent = run ? run.task || run.runId : '暂无协作运行';
+    title.textContent = run ? runKinds[run.kind] : '暂无协作运行';
     title.title = run?.task ?? '';
     $('conversation-messages').replaceChildren();
     $('conversation-messages').hidden = true;
@@ -2425,7 +2488,6 @@ async function loadConversation() {
     const cursor = view.seen === undefined ? '' : '?after=' + view.seen;
     detail = await api('/runs/' + run.runId + cursor);
     if (tab !== 'conversation' || request !== s.request) return;
-    if (detail.steps) view.actors = new Map(Object.entries(detail.steps));
     updateBadge(status, detail.status, 'run');
     renderConversation({ ...run, ...detail }, view);
   } while (detail.timelineHasMore);
@@ -2436,8 +2498,7 @@ $('conversation-run').addEventListener('change', event => {
   loadConversation().catch(error => message(error.message, true));
 });
 wire('conversation-latest', () => {
-  const list = $('conversation-messages');
-  list.scrollTop = list.scrollHeight;
+  conversationState.view?.latest?.scrollIntoView({ block: 'start' });
 });
 wire('conversation-detail', async () => {
   selectedRun = conversationState.view.runId;

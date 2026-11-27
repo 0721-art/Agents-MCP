@@ -134,7 +134,7 @@ export async function createHttp(service, { port = service.getConfig().port, onS
         if (method === 'GET' && !action) {
           const cursor = url.searchParams.get('after');
           const after = cursor === null ? undefined : /^\d+$/.test(cursor) ? Number(cursor) : NaN;
-          return sendJson(res, 200, service.redact(await service.status({ runId, after })));
+          return sendJson(res, 200, service.redact(await service.status({ runId, after }, { includeSteps: true })));
         }
         if (method === 'POST' && action === 'cancel') {
           await value();

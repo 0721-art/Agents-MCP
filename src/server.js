@@ -397,7 +397,7 @@ export async function createService({ stateDir, env = process.env, cwd = process
         return { status: ctx.signal.aborted ? 'cancelled' : result.failed ? 'FAILED' : 'PASS', answer: result.answer };
       })), ...enabledNotice() };
     },
-    async status({ runId, after, waitMs = 0 } = {}) {
+    async status({ runId, after, waitMs = 0 } = {}, { includeSteps = false } = {}) {
       if (after !== undefined && !integer(after, 0, Number.MAX_SAFE_INTEGER)) {
         throw problem('E_CURSOR', 'after must be a non-negative integer.');
       }
@@ -420,7 +420,7 @@ export async function createService({ stateDir, env = process.env, cwd = process
         const timelineCursor = after + page.length;
         const timelineHasMore = timelineCursor < timeline.length;
         return { runId, status: state.status, finishedAt: state.finishedAt, timeline: page, timelineCursor,
-          timelineHasMore, answer: timelineHasMore ? undefined : state.answer };
+          timelineHasMore, answer: timelineHasMore ? undefined : state.answer, ...(includeSteps && { steps: state.steps }) };
       }
       return { ...state, timeline: state.timeline ?? [], directory, reportPath: await store.hasReport(runId) ? join(directory, 'report.md') : null,
         events: await store.recentEvents(runId), artifacts: (await store.list(join(directory, 'artifacts'))).filter(name => name.endsWith('.md')) };

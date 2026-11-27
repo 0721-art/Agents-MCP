@@ -29,6 +29,7 @@ const protocol = [
   '@@AGENTS_MCP delegate {"to":"agent-id","model":"model-id","effort":"effort","task":"subtask"}',
   '@@AGENTS_MCP report {"summary":"final answer","artifacts":["workspace-relative path"]}',
 ].join('\n');
+const replyLanguage = '面向用户的回复、进展摘要和委派说明请使用简体中文。代码、文件名和协议字段保留原样。';
 
 export async function executeDispatch(ctx, input, caps) {
   const tree = ctx.state.delegationTree = [];
@@ -50,9 +51,9 @@ export async function executeDispatch(ctx, input, caps) {
     take();
   });
   async function actorLoop(actor, id, depth, task) {
-    const first = ['Task:\n' + task, depth < caps.maxDepth && 'Available agents:\n' + roster,
-      depth < caps.maxDepth && protocol].filter(Boolean).join('\n\n');
-    let prompt = first;
+    const taskContext = 'Task:\n' + task;
+    const availability = depth < caps.maxDepth && 'Available agents:\n' + roster;
+    let prompt = [taskContext, replyLanguage, availability, availability && protocol].filter(Boolean).join('\n\n');
     let sessionId;
     let answer = '';
     let history = '';
@@ -111,16 +112,17 @@ export async function executeDispatch(ctx, input, caps) {
           await ctx.save();
         }
       }));
-      const continuation = 'Delegation results:\n' + results.join('\n\n') + '\n\n' + protocol;
+      const continuation = 'Delegation results:\n' + results.join('\n\n');
       if (sessionId && adapter.resumeArgs) {
-        prompt = continuation;
+        prompt = [continuation, replyLanguage, protocol].join('\n\n');
       } else {
         if (!ctx.state.warnings.includes('A CLI continued using a transcript in a new session.')) {
           ctx.state.warnings.push('A CLI continued using a transcript in a new session.');
         }
         history += '\n\nAssistant:\n' + answer + '\n\n' + continuation;
         // ponytail: retain a bounded conversation tail; use resumable sessions for longer context.
-        prompt = first + '\n\nPrevious conversation:\n' + history.slice(-128_000);
+        prompt = [taskContext, availability, 'Previous conversation:\n' + history.slice(-128_000), replyLanguage, protocol]
+          .filter(Boolean).join('\n\n');
       }
     }
     return { status: ctx.signal.aborted ? 'cancelled' : 'incomplete', answer };

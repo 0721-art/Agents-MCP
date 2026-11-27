@@ -19,7 +19,7 @@ export function instructionText({ enabled, gate = {}, modeB = {} } = {}) {
     '1. 接到任务后，第一次调用 agents_* 之前先用 agents_gate 问一次「是否为此任务启用 Agents-MCP？」，同一任务只问一次（复用同一个 taskId）。',
     '2. 用户同意后，在回复开头明确写一句「Agents-MCP 已启用」，并说明这次用哪种模式。',
     '3. 编排用 agents_flow_plan → agents_flow_run，派活用 agents_delegate，进度看 agents_status，取消用 agents_cancel，代写职责用 agents_draft_role。',
-    '4. 不要把 agent 名、模型、思考强度写死：先用 agents_list 读本机实际可用的组合。',
+    '4. 用 agents_list 确认可用的 Agent、模型与思考强度。同一任务内可复用已查到的清单，遇到配置变化或组合无效时再查询。',
     '5. 拿到 runId 后，用 agents_status({runId, after: 0}) 读取协作消息。后续把 timelineCursor 传给 after；有未读消息就继续读取，等新消息时可用 waitMs: 10000。',
     '6. 每批有新进展时，在本对话的进度消息里说明哪个 Agent 接手了什么、交给谁、为什么退回或失败。用 timeline 的消息和摘要；没有新消息就继续等待。finishedAt 存在且 timelineHasMore 为 false 时汇报最终结果。',
   ].join('\n');

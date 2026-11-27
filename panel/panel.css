@@ -1331,6 +1331,8 @@ textarea {
 .col-duration { width: 20%; }
 
 /* Collaboration conversation */
+#conversation .inline-field > span { white-space: nowrap; }
+
 .conversation-window {
   min-width: 0;
   overflow: hidden;
@@ -1377,8 +1379,7 @@ textarea {
   list-style: none;
 }
 
-.conversation-turn,
-.conversation-activity {
+.conversation-turn {
   display: flex;
   align-items: flex-start;
   gap: var(--sp-3);
@@ -1441,22 +1442,79 @@ textarea {
   line-height: 1.65;
 }
 
-.conversation-activity {
+.conversation-board {
+  width: min(100%, 48rem);
+  margin-inline: auto;
+}
+
+.conversation-steps,
+.conversation-step-events {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conversation-step {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.conversation-step-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  list-style: none;
+}
+
+.conversation-step-summary::-webkit-details-marker { display: none; }
+.conversation-step-summary::after { content: '›'; color: var(--fg-3); }
+.conversation-step details[open] > .conversation-step-summary::after { transform: rotate(90deg); }
+.conversation-step-summary:hover { background: var(--surface-2); }
+
+.conversation-step-number {
+  color: var(--accent);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+
+.conversation-step-label {
+  display: grid;
+  gap: 1px;
+  overflow-wrap: anywhere;
+}
+
+.conversation-step-label strong,
+.conversation-step-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-step-label strong { color: var(--fg); }
+.conversation-step-preview { color: var(--accent); font-size: var(--fs-12); }
+
+.conversation-step-events {
+  gap: var(--sp-4);
+  padding: var(--sp-3);
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.conversation-step-events:empty { display: none; }
+.conversation-step-empty { padding: var(--sp-2) var(--sp-3); }
+
+.conversation-transfer {
+  padding-inline-start: var(--sp-3);
+  border-inline-start: 2px solid var(--accent-line);
   color: var(--fg-2);
 }
 
-.conversation-activity .conversation-mark {
-  background: var(--accent-weak);
-  color: var(--accent);
-}
-
-.conversation-activity[data-kind="review"] .conversation-mark {
-  background: var(--warn-weak);
-  color: var(--warn);
-}
-
-.conversation-activity strong {
-  font-weight: 500;
+.conversation-transfer[data-kind="review"] {
+  border-inline-start-color: var(--warn-line);
 }
 
 .conversation-turn[data-kind="result"] .conversation-content {

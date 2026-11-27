@@ -42,7 +42,7 @@
             <rect x="2.5" y="9" width="4.5" height="4.5" rx="1"></rect>
             <rect x="9" y="9" width="4.5" height="4.5" rx="1"></rect>
           </svg>
-          <span class="nav-label">Agents</span>
+          <span class="nav-label">智能体</span>
         </button>
         <button type="button" class="nav-item" data-tab="flow" aria-controls="flow">
           <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -110,7 +110,7 @@
       <section id="agents" class="page">
         <div class="page-head">
           <div class="page-title">
-            <h1>Agents</h1>
+            <h1>智能体</h1>
             <p class="page-sub">本机已安装、可供编排与委派的 CLI 运行环境</p>
           </div>
           <div class="head-actions">
@@ -315,7 +315,7 @@
               <h2 id="conversation-title">协作消息</h2>
               <span id="conversation-status" class="pill" hidden></span>
             </div>
-            <button id="conversation-latest" type="button" class="btn btn-ghost btn-sm" hidden>跳到最新 ↓</button>
+            <button id="conversation-latest" type="button" class="btn btn-ghost btn-sm" hidden>定位最新步骤</button>
           </div>
           <ol id="conversation-messages" class="conversation" role="list" aria-label="协作消息" aria-live="polite" tabindex="0" hidden></ol>
           <p id="conversation-empty" class="conversation-empty" role="status">正在读取运行记录…</p>
@@ -514,6 +514,24 @@
       </section>
     </main>
   </div>
+
+  <template id="conversation-step-template">
+    <li class="conversation-step">
+      <details>
+        <summary class="conversation-step-summary">
+          <span class="conversation-step-number" data-step-number></span>
+          <span class="conversation-step-label">
+            <strong data-step-title></strong>
+            <span class="conversation-caption" data-step-actor></span>
+            <span class="conversation-step-preview" data-step-preview hidden></span>
+          </span>
+          <span class="pill" data-step-status></span>
+        </summary>
+        <ol class="conversation-step-events" role="list" aria-label="步骤对话"></ol>
+        <p class="conversation-caption conversation-step-empty" data-step-empty>暂无步骤对话。</p>
+      </details>
+    </li>
+  </template>
 
   <template data-route-template>
     <svg class="route-svg" aria-hidden="true">
