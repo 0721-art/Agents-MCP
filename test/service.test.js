@@ -18,7 +18,7 @@ import { executeDispatch, parseBlocks } from '../src/engine/dispatch.js';
 const actor = { agent: 'fixture', model: 'fixture-model', effort: 'low' };
 const flow = {
   task: 'Build and review',
-  participants: [{ id: 'author', ...actor, writes: true }, { id: 'reviewer', ...actor }],
+  participants: [{ id: 'author', ...actor, role: '方案编写', writes: true }, { id: 'reviewer', ...actor }],
   steps: [
     { id: 'write', participant: 'author', task: 'Implement', inputs: ['task'], produces: ['patch'] },
     { id: 'review', participant: 'reviewer', task: 'changes-then-pass', dependsOn: ['write'], inputs: ['patch'] },
@@ -513,7 +513,13 @@ test('HTTP serves the panel and shares gate and runs with MCP', async (t) => {
   for (const path of ['/', '/panel.js', '/panel.css']) {
     const response = await fetchLocal(path);
     assert.equal(response.status, 200);
-    assert.doesNotMatch(await response.text(), /https?:\/\//);
+    const content = await response.text();
+    assert.doesNotMatch(content, /https?:\/\//);
+    if (path === '/') {
+      assert.match(content, /data-tab="conversation" aria-controls="conversation"/);
+      assert.match(content, /<section id="conversation" class="page" hidden>/);
+      assert.ok(content.includes('class="conversation-window"'), 'the conversation has its own chat surface');
+    }
   }
   const init = await post('/mcp', { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
   assert.equal((await init.json()).result.serverInfo.name, 'agents');
@@ -545,6 +551,15 @@ test('HTTP serves the panel and shares gate and runs with MCP', async (t) => {
   const { runId } = await (await post('/api/flow/run', flow)).json();
   assert.equal((await finish(service, runId)).status, 'PASS');
   assert.ok((await get('/api/runs')).some(run => run.runId === runId));
+  const initialMessages = await get('/api/runs/' + runId + '?after=0');
+  assert.equal(initialMessages.timelineCursor, initialMessages.timeline.length);
+  const actorMessage = initialMessages.timeline.find(event => event.kind === 'step_started');
+  assert.equal(actorMessage.model, flow.participants[0].model);
+  assert.equal(actorMessage.effort, flow.participants[0].effort);
+  assert.equal(actorMessage.role, flow.participants[0].role);
+  const nextMessages = await get('/api/runs/' + runId + '?after=' + initialMessages.timelineCursor);
+  assert.equal(nextMessages.timelineCursor, initialMessages.timelineCursor + nextMessages.timeline.length);
+  assert.ok(!Object.hasOwn(nextMessages, 'events'));
   const stream = await fetchLocal('/mcp', { method: 'POST', headers: {
     'Content-Type': 'application/json', 'Mcp-Session-Id': session, Accept: 'text/event-stream',
   }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: {

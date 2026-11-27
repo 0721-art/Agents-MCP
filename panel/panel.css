@@ -1331,60 +1331,176 @@ textarea {
 .col-duration { width: 20%; }
 
 /* Collaboration conversation */
+.conversation-window {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
 .conversation-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--line);
 }
 
-.conversation {
-  display: grid;
-  gap: var(--sp-2);
-  max-height: 28rem;
-  overflow-y: auto;
-  margin: 0;
-  padding: var(--sp-2);
-  list-style: none;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.conversation-item {
-  padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--line);
-  border-inline-start: 3px solid var(--line-strong);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  overflow-wrap: anywhere;
-}
-
-.conversation-item:is([data-kind="handoff"], [data-kind="delegate"], [data-kind="delegation_result"]) {
-  border-inline-start-color: var(--accent);
-}
-
-.conversation-item[data-kind="review"] {
-  border-inline-start-color: var(--warn);
-}
-
-.conversation-head {
+.conversation-topic {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-1) var(--sp-3);
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
 }
 
-.conversation-head time,
-.conversation-item p {
-  color: var(--fg-2);
+.conversation-topic h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--fs-13);
 }
 
-.conversation-item p {
-  margin: var(--sp-1) 0 0;
+.conversation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  max-height: max(16rem, calc(100dvh - 12rem));
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  margin: 0;
+  padding: clamp(14px, 3vw, 32px);
+  list-style: none;
+}
+
+.conversation-turn,
+.conversation-activity {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  width: min(100%, 48rem);
+  margin-inline: auto;
+  overflow-wrap: anywhere;
+}
+
+.conversation-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-weight: 600;
+}
+
+.conversation-content {
+  min-width: 0;
+}
+
+.conversation-turn[data-kind="task"] {
+  flex-direction: row-reverse;
+}
+
+.conversation-turn[data-kind="task"] .conversation-content {
+  max-width: min(40rem, 84%);
+}
+
+.conversation-turn[data-kind="task"] .conversation-byline {
+  justify-content: flex-end;
+}
+
+.conversation-turn[data-kind="task"] .conversation-body {
+  padding: 10px 14px;
+  border-radius: 14px 4px 14px 14px;
+  background: var(--accent-weak);
+}
+
+.conversation-byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--sp-2);
+  margin-bottom: var(--sp-1);
+}
+
+.conversation-byline span,
+.conversation-byline time,
+.conversation-caption {
+  color: var(--fg-3);
+  font-size: var(--fs-12);
+}
+
+.conversation-body {
+  display: grid;
+  gap: var(--sp-1);
+  line-height: 1.65;
+}
+
+.conversation-activity {
+  color: var(--fg-2);
+}
+
+.conversation-activity .conversation-mark {
+  background: var(--accent-weak);
+  color: var(--accent);
+}
+
+.conversation-activity[data-kind="review"] .conversation-mark {
+  background: var(--warn-weak);
+  color: var(--warn);
+}
+
+.conversation-activity strong {
+  font-weight: 500;
+}
+
+.conversation-turn[data-kind="result"] .conversation-content {
+  flex: 1;
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-2);
+}
+
+.conversation-turn[data-kind="result"][data-tone="ok"] .conversation-mark {
+  background: var(--ok-weak);
+  color: var(--ok);
+}
+
+.conversation summary {
+  cursor: pointer;
+  color: var(--fg-2);
+}
+
+.conversation-thinking > summary {
+  color: var(--fg-3);
+  font-size: var(--fs-12);
+}
+
+.conversation-thoughts {
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
+  padding-inline-start: var(--sp-3);
+  border-inline-start: 2px solid var(--line-strong);
+  color: var(--fg-2);
+}
+
+.conversation p {
   white-space: pre-wrap;
+}
+
+.conversation details > p {
+  margin-top: var(--sp-2);
+}
+
+.conversation-empty {
+  color: var(--fg-3);
+  padding: var(--sp-3) var(--sp-4) var(--sp-5);
+  text-align: center;
 }
 
 /* Thinking disclosures */

@@ -128,7 +128,8 @@ export async function createService({ stateDir, env = process.env, cwd = process
         Object.assign(stepState, { status: 'running', startedAt: new Date().toISOString(), agent: actor.agent,
           model: actor.model, effort: actor.effort });
         const activity = { step, agent: actor.agent, round: stepState.round };
-        note({ kind: 'step_started', ...activity }, task);
+        const role = typeof actor.role === 'string' ? actor.role.trim().slice(0, 120) : undefined;
+        note({ kind: 'step_started', ...activity, model: actor.model, effort: actor.effort, role }, task);
         await save();
         const started = Date.now();
         const assistant = [];

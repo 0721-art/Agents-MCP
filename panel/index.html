@@ -63,6 +63,13 @@
           </svg>
           <span class="nav-label">模式 B · 委派</span>
         </button>
+        <button type="button" class="nav-item" data-tab="conversation" aria-controls="conversation">
+          <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3.5 2.8h9a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 1-1.5 1.5H7L3.5 13v-2.2A1.5 1.5 0 0 1 2 9.3v-5a1.5 1.5 0 0 1 1.5-1.5Z"></path>
+            <path d="M5 6h6M5 8h4"></path>
+          </svg>
+          <span class="nav-label">协作对话</span>
+        </button>
         <button type="button" class="nav-item" data-tab="runs" aria-controls="runs">
           <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
             <circle cx="8" cy="8" r="5.5"></circle>
@@ -289,11 +296,37 @@
         </div>
       </section>
 
+      <section id="conversation" class="page" hidden>
+        <div class="page-head">
+          <div class="page-title"><h1>协作对话</h1></div>
+          <div class="head-actions">
+            <label class="inline-field">
+              <span>运行</span>
+              <select id="conversation-run" class="route-run-picker">
+                <option value="">跟随最新运行</option>
+              </select>
+            </label>
+            <button id="conversation-detail" type="button" class="btn" hidden>查看运行详情</button>
+          </div>
+        </div>
+        <div class="conversation-window">
+          <div class="conversation-toolbar">
+            <div class="conversation-topic">
+              <h2 id="conversation-title">协作消息</h2>
+              <span id="conversation-status" class="pill" hidden></span>
+            </div>
+            <button id="conversation-latest" type="button" class="btn btn-ghost btn-sm" hidden>跳到最新 ↓</button>
+          </div>
+          <ol id="conversation-messages" class="conversation" role="list" aria-label="协作消息" aria-live="polite" tabindex="0" hidden></ol>
+          <p id="conversation-empty" class="conversation-empty" role="status">正在读取运行记录…</p>
+        </div>
+      </section>
+
       <section id="runs" class="page" hidden>
         <div class="page-head">
           <div class="page-title">
             <h1>运行记录</h1>
-            <p class="page-sub">每 1 秒更新协作对话，查看进展、交接和结果</p>
+            <p class="page-sub">查看步骤状态、产物和事件</p>
           </div>
           <div class="head-actions">
             <button id="refresh-runs" type="button" class="btn">刷新</button>
@@ -304,7 +337,7 @@
           <div id="run-detail" class="card run-detail-panel" aria-label="运行详情">
             <div class="empty">
               <p class="empty-title">选择一条运行记录</p>
-              <p class="hint">从左侧选择一条运行记录查看协作对话，或去模式 A 发起一次。</p>
+              <p class="hint">从左侧选择一条运行记录，或去模式 A 发起一次。</p>
             </div>
           </div>
         </div>

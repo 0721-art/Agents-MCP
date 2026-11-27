@@ -131,7 +131,11 @@ export async function createHttp(service, { port = service.getConfig().port, onS
       const run = path.match(/^\/api\/runs\/([\w-]+)(?:\/(cancel|files\/(.+)))?$/);
       if (run) {
         const [, runId, action, file] = run;
-        if (method === 'GET' && !action) return sendJson(res, 200, service.redact(await service.status({ runId })));
+        if (method === 'GET' && !action) {
+          const cursor = url.searchParams.get('after');
+          const after = cursor === null ? undefined : /^\d+$/.test(cursor) ? Number(cursor) : NaN;
+          return sendJson(res, 200, service.redact(await service.status({ runId, after })));
+        }
         if (method === 'POST' && action === 'cancel') {
           await value();
           return sendJson(res, 200, service.redact(await service.cancel({ runId })));

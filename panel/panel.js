@@ -273,6 +273,7 @@ async function switchTab(id) {
   });
   message('');
   if (id === 'flow') scheduleFlowGraph();
+  if (id === 'conversation') await loadConversation();
   if (id === 'runs') {
     await loadRuns();
     if (runDetailState?.routeFigure) scheduleRouteRender(runDetailState.routeFigure);
@@ -890,8 +891,7 @@ async function launchRun(path, data) {
   const result = await api(path, 'POST', data);
   if (await waitForGate(result, () => launchRun(path, data))) return;
   if (path === '/flow/run') cacheFlowPlan(result.runId, data);
-  selectedRun = result.runId;
-  await switchTab('runs');
+  await openConversation(result.runId);
 }
 
 // ============================================================================
@@ -1933,14 +1933,15 @@ function renderRunsEmptyDetail() {
   runDetailState = null;
   $('run-detail').replaceChildren(group('empty',
     el('p', '选择一条运行记录', 'empty-title'),
-    el('p', '从左侧选择一条运行记录查看协作对话，或去模式 A 发起一次。', 'hint'),
+    el('p', '从左侧选择一条运行记录，或去模式 A 发起一次。', 'hint'),
     button('去模式 A 发起一次', () => switchTab('flow'), 'btn-primary btn-sm')));
 }
 
 function createRunDetailSkeleton(runId) {
   const titleEl = el('h2', '');
   const statusPill = badge('pending', 'run');
-  const head = group('run-head', titleEl, statusPill);
+  const conversationLink = button('查看协作对话', () => openConversation(runId), 'btn-sm');
+  const head = group('run-head', titleEl, group('head-actions', statusPill, conversationLink));
 
   const statKind = el('span', '—', 'stat-value');
   const statId = el('span', runId, 'stat-value mono');
@@ -1951,17 +1952,6 @@ function createRunDetailSkeleton(runId) {
     group('stat', el('span', '运行 ID', 'stat-label'), statId),
     group('stat', el('span', '耗时', 'stat-label'), statDur),
     group('stat', el('span', '工作目录', 'stat-label'), statCwd));
-
-  const conversation = el('ol', undefined, 'conversation');
-  conversation.setAttribute('aria-label', '协作消息');
-  conversation.setAttribute('aria-live', 'polite');
-  conversation.tabIndex = 0;
-  conversation.hidden = true;
-  const conversationEmpty = el('p', '等待协作消息…', 'hint');
-  const jumpToLatest = button('跳到最新', () => { conversation.scrollTop = conversation.scrollHeight; }, 'btn-sm');
-  jumpToLatest.hidden = true;
-  const conversationSection = group('section-block',
-    group('conversation-toolbar', el('h3', '协作对话', 'section-title'), jumpToLatest), conversationEmpty, conversation);
 
   const routeFigure = el('figure', undefined, 'route route-embedded');
   routeFigure.dataset.route = 'run';
@@ -2003,11 +1993,10 @@ function createRunDetailSkeleton(runId) {
   }, 'btn-danger'));
   cancelWrap.hidden = true;
 
-  $('run-detail').replaceChildren(head, stats, conversationSection, routeFigure, stepsSection, thinkingSection, treeSection, logSection, linksSection, cancelWrap);
+  $('run-detail').replaceChildren(head, stats, routeFigure, stepsSection, thinkingSection, treeSection, logSection, linksSection, cancelWrap);
 
   return {
-    runId, titleEl, statusPill, statKind, statId, statDur, statCwd,
-    conversation, conversationEmpty, jumpToLatest,
+    runId, titleEl, statusPill, statKind, statId, statDur, statCwd, conversationLink,
     routeFigure, tableBody, thinkingWrap, thinkingRefs: new Map(),
     treeSection, treeWrap, logPre, linksSection, linksList, cancelWrap,
     lastLogText: '等待事件…', lastStepsSig: '', lastTreeSig: '', lastLinksSig: '',
@@ -2094,34 +2083,11 @@ async function loadRun(id) {
 
   if (s.titleEl.textContent !== run.task) s.titleEl.textContent = run.task;
   updateBadge(s.statusPill, run.status, 'run');
+  s.conversationLink.hidden = run.kind !== 'A' && run.kind !== 'B';
   s.statKind.textContent = runKinds[run.kind] ?? run.kind ?? '—';
   s.statId.textContent = run.runId;
   s.statDur.textContent = formatDuration(runDurationMs(run));
   s.statCwd.textContent = run.cwd || '—';
-
-  const timeline = run.timeline ?? [];
-  const conversation = s.conversation;
-  const shown = conversation.childElementCount;
-  if (timeline.length > shown) {
-    const follow = shown ? conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 32 : !run.finishedAt;
-    const rows = document.createDocumentFragment();
-    for (const event of timeline.slice(shown)) {
-      const item = el('li', undefined, 'conversation-item');
-      item.dataset.kind = event.kind;
-      const time = el('time', formatClock(event.at), 'mono');
-      time.dateTime = event.at;
-      item.append(group('conversation-head', el('strong', event.message), time));
-      if (event.detail) item.append(el('p', event.detail));
-      rows.append(item);
-    }
-    conversation.append(rows);
-    conversation.hidden = false;
-    s.conversationEmpty.hidden = true;
-    s.jumpToLatest.hidden = false;
-    if (follow) conversation.scrollTop = conversation.scrollHeight;
-  } else if (!shown && run.finishedAt) {
-    s.conversationEmpty.textContent = '这条历史运行可在下方查看步骤与事件。';
-  }
 
   // Update persistent routing graph without restarting active packet animations
   renderRouting(s.routeFigure, buildRunRouting(run, flowPlans.get(id)));
@@ -2268,6 +2234,215 @@ async function loadRun(id) {
 
   s.cancelWrap.hidden = Boolean(run.finishedAt);
 }
+
+const conversationState = { selection: '', options: null, request: 0, view: null };
+
+function openConversation(runId) {
+  conversationState.selection = runId;
+  return switchTab('conversation');
+}
+
+function conversationTime(at) {
+  const time = el('time', formatClock(at));
+  if (at) time.dateTime = at;
+  return time;
+}
+
+function conversationText(text, limit = 360, label) {
+  const paragraph = el('p', text);
+  if (!label && text.length <= limit) return paragraph;
+  const details = el('details');
+  details.append(el('summary', label || text.slice(0, limit).replace(/\s+/g, ' ').trimEnd() + '…'), paragraph);
+  return details;
+}
+
+function conversationTurn(kind, title, at, subtitle) {
+  const item = el('li', undefined, 'conversation-turn');
+  item.dataset.kind = kind;
+  const body = group('conversation-body');
+  const mark = el('span', title.slice(0, 1).toLocaleUpperCase(), 'conversation-mark');
+  mark.setAttribute('aria-hidden', 'true');
+  const header = group('conversation-byline', el('strong', title));
+  if (subtitle) header.append(el('span', subtitle));
+  header.append(conversationTime(at));
+  item.append(mark, group('conversation-content', header, body));
+  return { item, body };
+}
+
+function conversationResult(run, at, answer, status = run.status) {
+  const result = conversationTurn('result', '最终结果', at, statusText(status, 'run'));
+  result.item.dataset.tone = toneOf(status);
+  if (answer) result.body.append(conversationText(answer, 900));
+  return result.item;
+}
+
+function conversationThinking(turn, event) {
+  if (!turn.thinking) {
+    const details = el('details', undefined, 'conversation-thinking');
+    const summary = el('summary');
+    const notes = group('conversation-thoughts');
+    details.append(summary, notes);
+    turn.body.append(details);
+    turn.thinking = { summary, notes };
+  }
+  const { summary, notes } = turn.thinking;
+  if (event.kind === 'progress' && event.detail) notes.append(el('p', event.detail));
+  const count = notes.childElementCount;
+  const tokens = Number.isFinite(event.reasoningTokens) ? `${event.reasoningTokens} tokens` : '';
+  summary.textContent = ['思考过程', count && `${count} 条摘要`, tokens].filter(Boolean).join(' · ');
+  if (!count && tokens) notes.append(el('p', '该 Agent 的 CLI 仅返回思考用量。'));
+}
+
+function renderConversation(run, view) {
+  const list = $('conversation-messages');
+  const timeline = run.timeline ?? [];
+  const follow = list.childElementCount
+    ? list.scrollHeight - list.scrollTop - list.clientHeight < 32 : !run.finishedAt;
+  const rows = document.createDocumentFragment();
+  if (!list.firstChild) {
+    const task = conversationTurn('task', '任务', run.startedAt);
+    task.body.append(conversationText(run.task || run.runId));
+    rows.append(task.item);
+  }
+  for (const event of timeline) {
+    const agentReplied = event.kind === 'step_finished' && event.mode === 'B' && event.status === 'PASS';
+    if (event.kind === 'run_started' || (agentReplied && !Number.isFinite(event.reasoningTokens))) continue;
+    view.hasUpdates = true;
+    if (event.kind === 'run_finished') {
+      view.turn = null;
+      rows.append(conversationResult(run, event.at, run.answer || event.detail, event.status));
+      continue;
+    }
+    if (event.from && event.to) {
+      view.turn = null;
+      const activity = el('li', undefined, 'conversation-activity');
+      activity.dataset.kind = event.kind;
+      const marker = el('span', event.kind === 'review' ? '↶' : '↳', 'conversation-mark');
+      marker.setAttribute('aria-hidden', 'true');
+      const content = group('conversation-content', group('conversation-byline',
+        el('strong', event.message), conversationTime(event.at)));
+      if (event.detail) content.append(conversationText(event.detail, 180));
+      activity.append(marker, content);
+      rows.append(activity);
+      continue;
+    }
+    const key = JSON.stringify([event.agent, event.step, event.round]);
+    const actor = view.actors.get(event.step) ?? {};
+    if (event.kind === 'step_started') {
+      view.actors.set(event.step, { model: event.model ?? actor.model, effort: event.effort ?? actor.effort,
+        role: event.role ?? actor.role });
+    }
+    if (view.turn?.key !== key) {
+      const identity = view.actors.get(event.step) ?? actor;
+      const label = [identity.role, event.step, identity.model, identity.effort && '强度 ' + identity.effort,
+        event.round > 1 && '第 ' + event.round + ' 轮'].filter(Boolean).join(' · ');
+      const turn = conversationTurn('agent', agentLabel(event.agent) || 'Agent', event.at, label);
+      view.turn = { key, body: turn.body };
+      rows.append(turn.item);
+    }
+    if (event.kind === 'step_finished') {
+      if (Number.isFinite(event.reasoningTokens)) conversationThinking(view.turn, event);
+      const status = agentReplied ? '已回复' : statusText(event.status, 'run');
+      if (event.detail && (event.status === 'PASS' || event.status === 'CHANGES_REQUESTED')) {
+        view.turn.body.append(conversationText(event.detail, 360,
+          status + (event.status === 'PASS' ? ' · 阶段结果' : ' · 评审反馈')));
+      } else {
+        view.turn.body.append(el('span', status, 'conversation-caption'));
+        if (event.detail) view.turn.body.append(conversationText(event.detail));
+      }
+    } else if (event.kind === 'progress' && event.detail) {
+      conversationThinking(view.turn, event);
+    } else if (event.detail && (event.kind !== 'step_started' || event.detail !== run.task)) {
+      view.turn.body.append(conversationText(event.detail));
+    } else if (event.kind === 'step_started') {
+      view.turn.body.append(el('span', '已接手任务', 'conversation-caption'));
+    }
+  }
+  if (view.seen === undefined && !timeline.length && run.finishedAt && run.answer) {
+    rows.append(conversationResult(run, run.finishedAt, run.answer));
+  }
+  if (rows.childElementCount) list.append(rows);
+  view.seen = run.timelineCursor ?? timeline.length;
+  view.finished = Boolean(run.finishedAt && !run.timelineHasMore);
+  const empty = $('conversation-empty');
+  empty.hidden = Boolean(view.hasUpdates);
+  const emptyText = view.finished ? '这次运行生成于协作对话上线前。' : '等待 Agent 接手…';
+  if (!empty.hidden && empty.textContent !== emptyText) empty.textContent = emptyText;
+  list.hidden = false;
+  $('conversation-latest').hidden = !view.hasUpdates;
+  if (follow) list.scrollTop = list.scrollHeight;
+}
+
+async function loadConversation() {
+  const s = conversationState;
+  const request = ++s.request;
+  const runs = await api('/runs');
+  if (tab !== 'conversation' || request !== s.request) return;
+  updateRunsBadge(runs);
+  const collaborations = runs.filter(run => run.kind === 'A' || run.kind === 'B');
+  const picker = $('conversation-run');
+  const options = collaborations.map(run => run.runId).join(',');
+  if (options !== s.options) {
+    s.options = options;
+    picker.replaceChildren(el('option', '跟随最新运行'), ...collaborations.map(run => {
+      const when = new Date(run.startedAt).toLocaleString('zh-CN', {
+        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+      });
+      const label = [when, run.kind, (run.task || run.runId).slice(0, 55)].join(' · ');
+      const option = el('option', label);
+      option.value = run.runId;
+      return option;
+    }));
+    picker.options[0].value = '';
+  }
+  let run = collaborations.find(run => run.runId === s.selection);
+  if (!run) {
+    s.selection = '';
+    run = collaborations[0];
+  }
+  picker.disabled = !run;
+  if (picker.value !== s.selection) picker.value = s.selection;
+  const status = $('conversation-status');
+  status.hidden = !run;
+  if (run) updateBadge(status, run.status, 'run');
+  if (!s.view || s.view.runId !== run?.runId) {
+    s.view = { runId: run?.runId, actors: new Map(), finished: false };
+    const title = $('conversation-title');
+    title.textContent = run ? run.task || run.runId : '暂无协作运行';
+    title.title = run?.task ?? '';
+    $('conversation-messages').replaceChildren();
+    $('conversation-messages').hidden = true;
+    $('conversation-latest').hidden = true;
+    $('conversation-detail').hidden = !run;
+    const empty = $('conversation-empty');
+    empty.hidden = false;
+    empty.textContent = run ? '正在读取协作消息…' : '从模式 A 或模式 B 发起任务后，协作消息会出现在这里。';
+  }
+  if (!run || s.view.finished) return;
+  const view = s.view;
+  let detail;
+  do {
+    const cursor = view.seen === undefined ? '' : '?after=' + view.seen;
+    detail = await api('/runs/' + run.runId + cursor);
+    if (tab !== 'conversation' || request !== s.request) return;
+    if (detail.steps) view.actors = new Map(Object.entries(detail.steps));
+    updateBadge(status, detail.status, 'run');
+    renderConversation({ ...run, ...detail }, view);
+  } while (detail.timelineHasMore);
+}
+
+$('conversation-run').addEventListener('change', event => {
+  conversationState.selection = event.target.value;
+  loadConversation().catch(error => message(error.message, true));
+});
+wire('conversation-latest', () => {
+  const list = $('conversation-messages');
+  list.scrollTop = list.scrollHeight;
+});
+wire('conversation-detail', async () => {
+  selectedRun = conversationState.view.runId;
+  await switchTab('runs');
+});
 
 // ============================================================================
 // 协作动画：专门展示 agent 之间每一次交接的独立页面
@@ -2563,5 +2738,6 @@ function poll(action, ms) {
   void tick();
 }
 poll(loadGate, 1500);
+poll(() => tab === 'conversation' && loadConversation(), 500);
 poll(() => tab === 'runs' && loadRuns(), 1000);
 poll(() => tab === 'route' && routePageState.live && Date.now() >= routePageState.replayUntil && loadRoutePage(), 1000);
